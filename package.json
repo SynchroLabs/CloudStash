@@ -1,0 +1,38 @@
+{
+  "name": "mantabox",
+  "version": "0.0.1",
+  "description": "End-user cloud file on Joyent Manta",
+  "homepage": "http://synchro.io/",
+  "contributors": [
+    {
+      "name": "Bob Dickinson",
+      "email": "bob@synchro.io"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SynchroLabs/MantaBox"
+  },
+  "bugs": {
+    "url": "https://github.com/SynchroLabs/MantaBox/issues"
+  },
+  "dependencies": {
+    "body-parser": "^1.15.2",
+    "bunyan": "^1.8.10",
+    "commander": "^2.3.0",
+    "express": "~4.14.0",
+    "fs-extra": "^1.0.0",
+    "jsonwebtoken": "^7.4.1",
+    "log4js": "^0.6.21",
+    "manta": "^3.0.0",
+    "nconf": "^0.7.1",
+    "restify": "^4.3.0",
+    "restify-jwt": "^0.4.0"
+  },
+  "scripts": {
+    "start": "node app.js"
+  },
+  "engines": {
+    "node": ">= 0.12"
+  }
+}
