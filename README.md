@@ -24,3 +24,15 @@ API Specification / Documentation
 
 Interactive testing
   Postman - can import Swagger file
+
+----
+
+To run on custom port and format Bunyan logging output for the console:
+
+    node app.js -p 1337 | ./node_modules/.bin/bunyan 
+
+To run Mocha unit tests
+
+    ./node_modules/.bin/mocha
+
+Maybe: https://www.npmjs.com/package/mocha-pretty-bunyan-nyan
