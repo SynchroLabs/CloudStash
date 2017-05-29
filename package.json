@@ -16,6 +16,8 @@
   "bugs": {
     "url": "https://github.com/SynchroLabs/MantaBox/issues"
   },
+  "license": "UNLICENSED",
+  "private": true,
   "dependencies": {
     "body-parser": "^1.15.2",
     "bunyan": "^1.8.10",
