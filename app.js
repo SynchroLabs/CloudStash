@@ -29,7 +29,12 @@ logger.info("MantaBox server v%s loading - %s", pkg.version, config.configDetail
 
 var _jwtSecret = "!!!super secret token that should be replaced with something private/secure!!!";
 
-var server = mantaBoxServer(_jwtSecret);
+var server = mantaBoxServer(_jwtSecret, config);
+if (!server)
+{
+    logger.error("Failed to create server, exiting");
+    process.exit();
+}
 
 server.listen(config.get('PORT'), function () 
 {
