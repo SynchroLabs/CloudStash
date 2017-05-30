@@ -32,7 +32,8 @@
     "restify-jwt": "^0.4.0"
   },
   "scripts": {
-    "start": "node app.js"
+    "start": "node app.js",
+    "test": "./node_modules/.bin/mocha"
   },
   "engines": {
     "node": ">= 0.12"
