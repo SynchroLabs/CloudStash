@@ -89,7 +89,8 @@ module.exports = function(params)
                 }
                 else
                 {
-                    fs.readFile(filePath, callback);
+                    callback(null, fs.createReadStream(filePath));
+                    //fs.readFile(filePath, callback);
                 }
             }
             catch (err)
@@ -102,11 +103,14 @@ module.exports = function(params)
                 callback(err, null);
             }
         },
-        putObject: function(filename, content, callback)
+        putObject: function(filename, callback)
         {
             var filePath = toSafeLocalPath(basePath, filename); 
-            // outputFile will create parent directory if it doesn't exist
-            fs.outputFile(filePath, content, callback);
+            
+            // !!! May need to create parent dirs if they don't exist (outputFile used to do that for us)
+            // !!! May need to use mode r+ (instead of default w) to overwrite existing file
+
+            callback(null, fs.createWriteStream(filePath));
         },
         deleteObject: function(filename, callback)
         {
