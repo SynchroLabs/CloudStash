@@ -3,7 +3,7 @@
 var fs = require('fs-extra');
 var path = require('path');
 
-var logger = require('bunyan').createLogger({name: "FileStore"});
+var log = require('./../lib/logger').getLogger("file-driver");
 
 function toSafeLocalPath(basePath, fileName)
 {
@@ -38,7 +38,7 @@ function getObjects(dirPath)
     var fileObjects = fs.readdirSync(dirPath);
     for (var i = 0; i < fileObjects.length; i++)
     {
-        logger.debug("Found file object: %s on path: %s", fileObjects[i], dirPath);
+        log.debug("Found file object: %s on path: %s", fileObjects[i], dirPath);
         var objPath = path.join(dirPath, fileObjects[i]);
         var stats = fs.statSync(objPath);
         if (stats.isDirectory())
@@ -58,7 +58,7 @@ module.exports = function(params)
 {
     var basePath = params.basePath;
 
-    logger.info("Using file store, basePath:", basePath);
+    log.info("Using file store, basePath:", basePath);
 
     var driver = 
     {

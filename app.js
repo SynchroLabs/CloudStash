@@ -2,8 +2,6 @@ var mantaBoxServer = require('./lib/server');
 var mantaBoxConfig = require('./lib/config');
 var pkg = require('./package.json');
 
-var logger = require('bunyan').createLogger({name: "MantaBox"});
-
 // Process command line params
 //
 var commander = require('commander');
@@ -21,39 +19,40 @@ if (commander.port)
 
 var config = mantaBoxConfig.getConfig(commander.config, overrides);
 
-// !!! Is there any configurating we can/should do for Bunyan from our config?
-//
-// log4js.configure(config.get('LOG4JS_CONFIG'));
+var loggerModule = require('./lib/logger');
+loggerModule.createMainLogger(config);
 
-logger.info("MantaBox server v%s loading - %s", pkg.version, config.configDetails);
+var log = loggerModule.getLogger("app");
+
+log.info("MantaBox server v%s loading - %s", pkg.version, config.configDetails);
 
 var _jwtSecret = "!!!super secret token that should be replaced with something private/secure!!!";
 
 var server = mantaBoxServer(_jwtSecret, config);
 if (!server)
 {
-    logger.error("Failed to create server, exiting");
+    log.error("Failed to create server, exiting");
     process.exit();
 }
 
 server.listen(config.get('PORT'), function () 
 {
-    logger.info('MantaBox listening on port:', this.address().port);
+    log.info('MantaBox listening on port:', this.address().port);
 });
 
 process.on('SIGTERM', function ()
 {
-    logger.info('SIGTERM - preparing to exit.');
+    log.info('SIGTERM - preparing to exit.');
     process.exit();
 });
 
 process.on('SIGINT', function ()
 {
-    logger.info('SIGINT - preparing to exit.');
+    log.info('SIGINT - preparing to exit.');
     process.exit();
 });
 
 process.on('exit', function (code)
 {
-    logger.info('Process exiting with code:', code);
+    log.info('Process exiting with code:', code);
 });

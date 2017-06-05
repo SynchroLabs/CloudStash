@@ -57,3 +57,5 @@ typings/
 # dotenv environment variables file
 .env
 
+# SYNCHRO
+config_manta.json

@@ -30,7 +30,7 @@
 //   "key": "-----BEGIN RSA PRIVATE KEY-----\nLOTS-OF-KEY-DATA-HERE==\n-----END RSA PRIVATE KEY-----"
 // }
 //
-var logger = require('bunyan').createLogger({name: "MantaStore"});
+var log = require('./../lib/logger').getLogger("manta-driver");
 
 var fs = require('fs');
 var path = require('path');
@@ -41,7 +41,7 @@ module.exports = function(params)
 {
     var basePath = params.basePath;
 
-    logger.debug("Using Manta store, basePath:", basePath);
+    log.debug("Using Manta store, basePath:", basePath);
 
     // key is "key" if provided, else from "keyStore" file.
     //
@@ -62,7 +62,7 @@ module.exports = function(params)
         url: params.url
     });
 
-    logger.debug('Manta client setup: %s', client.toString());
+    log.debug('Manta client setup: %s', client.toString());
 
     var driver = 
     {
@@ -85,21 +85,12 @@ module.exports = function(params)
                     }
                     else
                     {
-                        logger.error(err);
+                        log.error(err);
                         callback(err);
                     }
                 }
 
-                if (stream)
-                {
-                    const chunks = [];
-                    stream.on('data', (chunk) => {
-                        chunks.push(chunk);
-                    });
-                    stream.on('end', () => {
-                        callback(null, Buffer.concat(chunks));
-                    });
-                }
+                callback(null, stream);
             });
         }
     }
