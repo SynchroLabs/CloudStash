@@ -103,6 +103,28 @@ module.exports = function(params)
                 callback(err, null);
             }
         },
+        listDirectory: function(dirPath, callback)
+        {
+            var fullPath = toSafeLocalPath(basePath, dirPath); 
+
+            fs.readdir(fullPath, function(err, files) 
+            {
+                log.info("Files:", files);
+
+                var list = [];
+
+                files.forEach(function(file)
+                {
+                    var item = { name: file };
+                    var fStat = fs.statSync(path.posix.join(fullPath, file));
+                    item.type = fStat.isFile() ? "object" : "directory"; // !!! DropBox uses .tag for type with value "file" or "folder"
+                    item.size = fStat.size;
+                    list.push(item);
+                });
+
+                callback(null, list);
+            });
+        },
         putObject: function(filename, callback)
         {
             var filePath = toSafeLocalPath(basePath, filename); 

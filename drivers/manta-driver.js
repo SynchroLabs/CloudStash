@@ -92,7 +92,56 @@ module.exports = function(params)
 
                 callback(null, stream);
             });
-        }
+        },
+        listDirectory: function(dirpath, callback)
+        {
+            // path.posix.normalize will move any ../ to the front, and the regex will remove them.
+            //
+            var safeFilenamePath = path.posix.normalize(dirpath).replace(/^(\.\.[\/\\])+/, '');
+            var fullPath = path.posix.join(basePath, safeFilenamePath); 
+
+            log.info("safeFilenamePath", fullPath);
+
+            var options = {};
+
+            client.ls(fullPath, options, function(err, res)
+            {
+                var list = [];
+
+                res.on('object', function (obj) {
+                    log.info("file", obj);
+                    list.push(obj);
+                });
+
+                res.on('directory', function (dir) {
+                    log.info("dir", dir);
+                    list.push(dir);
+                });
+
+                res.once('error', function (err) {
+                    log.error(err);
+                    callback(err);
+                });
+
+                res.once('end', function () {
+                    callback(null, list);
+                });
+            });
+        },        
+        putObject: function(filename, callback)
+        {
+            // path.posix.normalize will move any ../ to the front, and the regex will remove them.
+            //
+            var safeFilenamePath = path.posix.normalize(filename).replace(/^(\.\.[\/\\])+/, '');
+            var filePath = path.posix.join(basePath, safeFilenamePath); 
+            
+            // !!! May need to create parent dirs if they don't exist
+            // !!! Do we have to do anything special to overwrite existing file?
+
+            var options = {};
+
+            callback(null, client.createWriteStream(filePath, options));
+        },
     }
 
     return driver;
