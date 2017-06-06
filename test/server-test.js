@@ -3,7 +3,8 @@ var assert = require('assert');
 var jwt = require('jsonwebtoken');
 
 var mantaBoxServer = require('./../lib/server');
-
+var loggerModule = require('./../lib/logger');
+loggerModule.createTestLogger();
 
 var _testSecret = "test";
 var _testConfig = require('./../lib/config').getConfig(null, 
