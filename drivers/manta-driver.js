@@ -172,6 +172,40 @@ module.exports = function(params)
 
             callback(null, client.createWriteStream(filePath, options));
         },
+        copyObject: function(filename, newFilename, callback)
+        {
+            var filePath = toSafeLocalPath(filename); 
+            var newFilePath = toSafeLocalPath(newFilename); 
+            
+            // !!! Note: Only copies single file (as opposed to folder), doesn't deal with name conflict / rename
+            //
+            client.ln(filePath, newFilePath, function(err) 
+            {
+                callback(err);
+            });
+        },
+        moveObject: function(filename, newFilename, callback)
+        {
+            var filePath = toSafeLocalPath(filename); 
+            var newFilePath = toSafeLocalPath(newFilename); 
+            
+            // !!! Note: Only moves single file (as opposed to folder), doesn't deal with name conflict / rename
+            //
+            client.ln(filePath, newFilePath, function(err) 
+            {
+                if (err)
+                {
+                    callback(err);
+                }
+                else
+                {
+                    client.unlink(filePath, function(err)
+                    {
+                        callback(err);
+                    });
+                }
+            });
+        },
         deleteObject: function(filename, callback)
         {
             // This will remove a file or a directory, so let's hope it's used correctly

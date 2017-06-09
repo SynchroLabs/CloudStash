@@ -1,5 +1,8 @@
 // File store
 //
+// https://nodejs.org/api/fs.html
+// https://github.com/jprichardson/node-fs-extra
+//
 var fs = require('fs-extra');
 var path = require('path');
 
@@ -151,6 +154,26 @@ module.exports = function(params)
 
             callback(null, fs.createWriteStream(filePath));
         },
+        copyObject: function(filename, newFilename, callback)
+        {
+            var filePath = toSafeLocalPath(filename); 
+            var newFilePath = toSafeLocalPath(newFilename); 
+            
+            fs.copy(filePath, newFilePath, function(err)
+            {
+                callback(err);
+            });
+        },
+        moveObject: function(filename, newFilename, callback)
+        {
+            var filePath = toSafeLocalPath(filename); 
+            var newFilePath = toSafeLocalPath(newFilename); 
+
+            fs.move(filePath, newFilePath, function(err)
+            {
+                callback(err);
+            });
+        },
         deleteObject: function(filename, callback)
         {
             // This will remove a file or a directory, so let's hope it's used correctly
@@ -159,7 +182,8 @@ module.exports = function(params)
 
             var entry = getEntryDetails(filePath, filename);
 
-            fs.remove(filePath, function(err){
+            fs.remove(filePath, function(err)
+            {
                 callback(err, entry)
             });
         }
