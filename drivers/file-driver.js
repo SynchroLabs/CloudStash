@@ -5,23 +5,6 @@ var path = require('path');
 
 var log = require('./../lib/logger').getLogger("file-driver");
 
-function toSafeLocalPath(basePath, fileName)
-{
-    // path.posix.normalize will move any ../ to the front, and the regex will remove them.
-    //
-    var safeFilename = path.posix.normalize(fileName).replace(/^(\.\.[\/\\])+/, '');
-    var filePath = path.posix.join(basePath, safeFilename); 
-
-    if (path.sep != '/')
-    {
-        // Replace forward slash with local platform seperator
-        //
-        filePath = filePath.replace(/[\/]/g, path.sep);
-    }
-
-    return filePath;
-}
-
 // Directory lising object format:
 //
 // [
@@ -54,18 +37,45 @@ function getObjects(dirPath)
     return output;
 }
 
+function getEntryDetails(fullpath, filename)
+{
+    var item = { name: filename };
+    var fStat = fs.statSync(fullpath);
+    item.type = fStat.isFile() ? "object" : "directory"; // !!! DropBox uses .tag for type with value "file" or "folder"
+    item.size = fStat.size;
+
+    return item;
+}
+
 module.exports = function(params)
 {
     var basePath = params.basePath;
 
     log.info("Using file store, basePath:", basePath);
 
+    function toSafeLocalPath(fileName)
+    {
+        // path.posix.normalize will move any ../ to the front, and the regex will remove them.
+        //
+        var safeFilename = path.posix.normalize(fileName).replace(/^(\.\.[\/\\])+/, '');
+        var filePath = path.posix.join(basePath, safeFilename); 
+
+        if (path.sep != '/')
+        {
+            // Replace forward slash with local platform seperator
+            //
+            filePath = filePath.replace(/[\/]/g, path.sep);
+        }
+
+        return filePath;
+    }
+
     var driver = 
     {
         provider: "file",
         doesObjectExist: function(filename, callback)
         {
-            var filePath = toSafeLocalPath(basePath, filename);
+            var filePath = toSafeLocalPath(filename);
             try
             {
                 callback(null, fs.existsSync(filePath));
@@ -75,9 +85,39 @@ module.exports = function(params)
                 callback(err);
             }
         },
+        createDirectory: function(dirPath, callback)
+        {
+            var fullPath = toSafeLocalPath(dirPath); 
+
+            var entry = getEntryDetails(fullPath, dirPath);
+
+            fs.mkdir(fullPath, function(err)
+            {
+                callback(err, entry);
+            });
+        },
+        listDirectory: function(dirPath, callback)
+        {
+            var fullPath = toSafeLocalPath(dirPath); 
+
+            fs.readdir(fullPath, function(err, files) 
+            {
+                log.info("Entries:", files);
+
+                var entries = [];
+
+                files.forEach(function(file)
+                {
+                    var entry = getEntryDetails(path.posix.join(fullPath, file), file);
+                    entries.push(entry);
+                });
+
+                callback(null, entries);
+            });
+        },
         getObject: function(filename, callback)
         {
-            var filePath = toSafeLocalPath(basePath, filename);
+            var filePath = toSafeLocalPath(filename);
 
             try
             {
@@ -90,7 +130,6 @@ module.exports = function(params)
                 else
                 {
                     callback(null, fs.createReadStream(filePath));
-                    //fs.readFile(filePath, callback);
                 }
             }
             catch (err)
@@ -103,31 +142,9 @@ module.exports = function(params)
                 callback(err, null);
             }
         },
-        listDirectory: function(dirPath, callback)
-        {
-            var fullPath = toSafeLocalPath(basePath, dirPath); 
-
-            fs.readdir(fullPath, function(err, files) 
-            {
-                log.info("Files:", files);
-
-                var list = [];
-
-                files.forEach(function(file)
-                {
-                    var item = { name: file };
-                    var fStat = fs.statSync(path.posix.join(fullPath, file));
-                    item.type = fStat.isFile() ? "object" : "directory"; // !!! DropBox uses .tag for type with value "file" or "folder"
-                    item.size = fStat.size;
-                    list.push(item);
-                });
-
-                callback(null, list);
-            });
-        },
         putObject: function(filename, callback)
         {
-            var filePath = toSafeLocalPath(basePath, filename); 
+            var filePath = toSafeLocalPath(filename); 
             
             // !!! May need to create parent dirs if they don't exist (outputFile used to do that for us)
             // !!! May need to use mode r+ (instead of default w) to overwrite existing file
@@ -138,8 +155,13 @@ module.exports = function(params)
         {
             // This will remove a file or a directory, so let's hope it's used correctly
             //
-            var filePath = toSafeLocalPath(basePath, filename); 
-            fs.remove(filePath, callback);
+            var filePath = toSafeLocalPath(filename);
+
+            var entry = getEntryDetails(filePath, filename);
+
+            fs.remove(filePath, function(err){
+                callback(err, entry)
+            });
         }
     }
 

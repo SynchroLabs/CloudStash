@@ -37,6 +37,13 @@ var path = require('path');
 
 var manta = require('manta');
 
+function getEntryDetails(mantaEntry)
+{
+    // !!! Convert to Dropbox form
+    //
+    return mantaEntry;
+}
+
 module.exports = function(params)
 {
     var basePath = params.basePath;
@@ -59,20 +66,81 @@ module.exports = function(params)
             user: params.user
         }),
         user: params.user,
-        url: params.url
+        url: params.url,
+        log: log
     });
+
+    function toSafeLocalPath(fileName)
+    {
+        // path.posix.normalize will move any ../ to the front, and the regex will remove them.
+        //
+        var safeFilename = path.posix.normalize(fileName).replace(/^(\.\.[\/\\])+/, '');
+        var filePath = path.posix.join(basePath, safeFilename); 
+
+        return filePath;
+    }
 
     log.debug('Manta client setup: %s', client.toString());
 
     var driver = 
     {
         provider: "manta",
+        createDirectory: function(dirPath, callback)
+        {
+            var fullPath = toSafeLocalPath(dirPath); 
+
+            client.mkdirp(fullPath, function(err)
+            {
+                // !!! Better entry details?  (query existing dir?)
+                //
+                if (err) 
+                {
+                    callback(err);
+                }
+                else 
+                {
+                    var entry = { type: "directory", file: dirPath };
+                    callback(null, getEntryDetails(entry));
+                }
+            });
+        },
+        listDirectory: function(dirpath, callback)
+        {
+            var fullPath = toSafeLocalPath(dirpath);
+
+            var options = {};
+
+            client.ls(fullPath, options, function(err, res)
+            {
+                var entries = [];
+
+                res.on('object', function (obj) 
+                {
+                    log.info("file", obj);
+                    entries.push(getEntryDetails(obj));
+                });
+
+                res.on('directory', function (dir) 
+                {
+                    log.info("dir", dir);
+                    entries.push(getEntryDetails(dir));
+                });
+
+                res.once('error', function (err) 
+                {
+                    log.error(err);
+                    callback(err);
+                });
+
+                res.once('end', function () 
+                {
+                    callback(null, entries);
+                });
+            });
+        },
         getObject: function(filename, callback)
         {
-            // path.posix.normalize will move any ../ to the front, and the regex will remove them.
-            //
-            var safeFilenamePath = path.posix.normalize(filename).replace(/^(\.\.[\/\\])+/, '');
-            var filePath = path.posix.join(basePath, safeFilenamePath); 
+            var filePath = toSafeLocalPath(filename);
 
             client.get(filePath, function(err, stream) 
             {
@@ -93,48 +161,10 @@ module.exports = function(params)
                 callback(null, stream);
             });
         },
-        listDirectory: function(dirpath, callback)
-        {
-            // path.posix.normalize will move any ../ to the front, and the regex will remove them.
-            //
-            var safeFilenamePath = path.posix.normalize(dirpath).replace(/^(\.\.[\/\\])+/, '');
-            var fullPath = path.posix.join(basePath, safeFilenamePath); 
-
-            log.info("safeFilenamePath", fullPath);
-
-            var options = {};
-
-            client.ls(fullPath, options, function(err, res)
-            {
-                var list = [];
-
-                res.on('object', function (obj) {
-                    log.info("file", obj);
-                    list.push(obj);
-                });
-
-                res.on('directory', function (dir) {
-                    log.info("dir", dir);
-                    list.push(dir);
-                });
-
-                res.once('error', function (err) {
-                    log.error(err);
-                    callback(err);
-                });
-
-                res.once('end', function () {
-                    callback(null, list);
-                });
-            });
-        },        
         putObject: function(filename, callback)
         {
-            // path.posix.normalize will move any ../ to the front, and the regex will remove them.
-            //
-            var safeFilenamePath = path.posix.normalize(filename).replace(/^(\.\.[\/\\])+/, '');
-            var filePath = path.posix.join(basePath, safeFilenamePath); 
-            
+            var filePath = toSafeLocalPath(filename);
+
             // !!! May need to create parent dirs if they don't exist
             // !!! Do we have to do anything special to overwrite existing file?
 
@@ -142,8 +172,40 @@ module.exports = function(params)
 
             callback(null, client.createWriteStream(filePath, options));
         },
+        deleteObject: function(filename, callback)
+        {
+            // This will remove a file or a directory, so let's hope it's used correctly
+            //
+            var filePath = toSafeLocalPath(filename);
+
+            client.info(filePath, function(err, info) 
+            {
+                if (err) 
+                {
+                    callback(err);
+                }
+                else 
+                {
+                    log.info("Got entry info on delete:", info);
+
+                    var entry = { name: filename };
+                    entry.type = (info.extension == "directory") ? "directory" : "object";
+
+                    client.unlink(filePath, function(err)
+                    {
+                        if (err) 
+                        {
+                            callback(err);
+                        }
+                        else 
+                        {
+                            callback(null, getEntryDetails(entry));
+                        }
+                    });
+                }
+            });
+        }
     }
 
     return driver;
 }
-
