@@ -30,6 +30,15 @@
 //   "key": "-----BEGIN RSA PRIVATE KEY-----\nLOTS-OF-KEY-DATA-HERE==\n-----END RSA PRIVATE KEY-----"
 // }
 //
+// ----
+//
+// REVIEW:
+//
+// !!! We do mkdrip on object write (put/copy/move).  We could be more clever and try the put before doing the mkdrip, 
+//     catching any DirectoryDoesNotExistError, and in only that case do the mkdirp and retry the put.
+//
+// ----
+//
 var log = require('./../lib/logger').getLogger("manta-driver");
 
 var fs = require('fs');
@@ -70,12 +79,12 @@ module.exports = function(params)
         log: log
     });
 
-    function toSafeLocalPath(fileName)
+    function toSafeLocalPath(user, fileName)
     {
         // path.posix.normalize will move any ../ to the front, and the regex will remove them.
         //
         var safeFilename = path.posix.normalize(fileName).replace(/^(\.\.[\/\\])+/, '');
-        var filePath = path.posix.join(basePath, safeFilename); 
+        var filePath = path.posix.join(basePath, user.account_id, user.app_id, safeFilename); 
 
         return filePath;
     }
@@ -85,28 +94,28 @@ module.exports = function(params)
     var driver = 
     {
         provider: "manta",
-        createDirectory: function(dirPath, callback)
+        createDirectory: function(user, dirPath, callback)
         {
-            var fullPath = toSafeLocalPath(dirPath); 
+            var fullPath = toSafeLocalPath(user, dirPath); 
 
             client.mkdirp(fullPath, function(err)
             {
-                // !!! Better entry details?  (query existing dir?)
-                //
                 if (err) 
                 {
                     callback(err);
                 }
                 else 
                 {
+                    // !!! Better entry details?  (query existing dir?)
+                    //
                     var entry = { type: "directory", file: dirPath };
                     callback(null, getEntryDetails(entry));
                 }
             });
         },
-        listDirectory: function(dirpath, callback)
+        listDirectory: function(user, dirpath, callback)
         {
-            var fullPath = toSafeLocalPath(dirpath);
+            var fullPath = toSafeLocalPath(user, dirpath);
 
             var options = {};
 
@@ -138,9 +147,9 @@ module.exports = function(params)
                 });
             });
         },
-        getObject: function(filename, callback)
+        getObject: function(user, filename, callback)
         {
-            var filePath = toSafeLocalPath(filename);
+            var filePath = toSafeLocalPath(user, filename);
 
             client.get(filePath, function(err, stream) 
             {
@@ -161,37 +170,11 @@ module.exports = function(params)
                 callback(null, stream);
             });
         },
-        putObject: function(filename, callback)
+        putObject: function(user, filename, callback)
         {
-            var filePath = toSafeLocalPath(filename);
+            var filePath = toSafeLocalPath(user, filename);
 
-            // !!! May need to create parent dirs if they don't exist
-            // !!! Do we have to do anything special to overwrite existing file?
-
-            var options = {};
-
-            callback(null, client.createWriteStream(filePath, options));
-        },
-        copyObject: function(filename, newFilename, callback)
-        {
-            var filePath = toSafeLocalPath(filename); 
-            var newFilePath = toSafeLocalPath(newFilename); 
-            
-            // !!! Note: Only copies single file (as opposed to folder), doesn't deal with name conflict / rename
-            //
-            client.ln(filePath, newFilePath, function(err) 
-            {
-                callback(err);
-            });
-        },
-        moveObject: function(filename, newFilename, callback)
-        {
-            var filePath = toSafeLocalPath(filename); 
-            var newFilePath = toSafeLocalPath(newFilename); 
-            
-            // !!! Note: Only moves single file (as opposed to folder), doesn't deal with name conflict / rename
-            //
-            client.ln(filePath, newFilePath, function(err) 
+            client.mkdirp(path.dirname(filePath), function(err)
             {
                 if (err)
                 {
@@ -199,18 +182,72 @@ module.exports = function(params)
                 }
                 else
                 {
-                    client.unlink(filePath, function(err)
+                    // !!! Do we have to do anything special to overwrite existing file?
+                    //
+                    var options = {};
+                    callback(null, client.createWriteStream(filePath, options));
+                }
+            });
+        },
+        copyObject: function(user, filename, newFilename, callback)
+        {
+            var filePath = toSafeLocalPath(user, filename); 
+            var newFilePath = toSafeLocalPath(user, newFilename); 
+            
+            client.mkdirp(path.dirname(newFilePath), function(err)
+            {
+                if (err)
+                {
+                    callback(err);
+                }
+                else
+                {
+                    // !!! Note: Only copies single file (as opposed to folder), doesn't deal with name conflict / rename
+                    //
+                    client.ln(filePath, newFilePath, function(err) 
                     {
                         callback(err);
                     });
                 }
             });
         },
-        deleteObject: function(filename, callback)
+        moveObject: function(user, filename, newFilename, callback)
+        {
+            var filePath = toSafeLocalPath(user, filename); 
+            var newFilePath = toSafeLocalPath(user, newFilename); 
+
+            client.mkdirp(path.dirname(newFilePath), function(err)
+            {
+                if (err)
+                {
+                    callback(err);
+                }
+                else
+                {
+                    // !!! Note: Only moves single file (as opposed to folder), doesn't deal with name conflict / rename
+                    //
+                    client.ln(filePath, newFilePath, function(err) 
+                    {
+                        if (err)
+                        {
+                            callback(err);
+                        }
+                        else
+                        {
+                            client.unlink(filePath, function(err)
+                            {
+                                callback(err);
+                            });
+                        }
+                    });
+                }
+            });
+        },
+        deleteObject: function(user, filename, callback)
         {
             // This will remove a file or a directory, so let's hope it's used correctly
             //
-            var filePath = toSafeLocalPath(filename);
+            var filePath = toSafeLocalPath(user, filename);
 
             client.info(filePath, function(err, info) 
             {

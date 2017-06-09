@@ -56,12 +56,12 @@ module.exports = function(params)
 
     log.info("Using file store, basePath:", basePath);
 
-    function toSafeLocalPath(fileName)
+    function toSafeLocalPath(user, fileName)
     {
         // path.posix.normalize will move any ../ to the front, and the regex will remove them.
         //
         var safeFilename = path.posix.normalize(fileName).replace(/^(\.\.[\/\\])+/, '');
-        var filePath = path.posix.join(basePath, safeFilename); 
+        var filePath = path.posix.join(basePath, user.account_id, user.app_id, safeFilename); 
 
         if (path.sep != '/')
         {
@@ -76,9 +76,9 @@ module.exports = function(params)
     var driver = 
     {
         provider: "file",
-        doesObjectExist: function(filename, callback)
+        doesObjectExist: function(user, filename, callback)
         {
-            var filePath = toSafeLocalPath(filename);
+            var filePath = toSafeLocalPath(user, filename);
             try
             {
                 callback(null, fs.existsSync(filePath));
@@ -88,20 +88,26 @@ module.exports = function(params)
                 callback(err);
             }
         },
-        createDirectory: function(dirPath, callback)
+        createDirectory: function(user, dirPath, callback)
         {
-            var fullPath = toSafeLocalPath(dirPath); 
+            var fullPath = toSafeLocalPath(user, dirPath); 
 
-            var entry = getEntryDetails(fullPath, dirPath);
-
-            fs.mkdir(fullPath, function(err)
+            fs.mkdirs(fullPath, function(err)
             {
-                callback(err, entry);
+                if (err)
+                {
+                    callback(err);
+                }
+                else
+                {
+                    var entry = getEntryDetails(fullPath, dirPath);
+                    callback(err, entry);
+                }
             });
         },
-        listDirectory: function(dirPath, callback)
+        listDirectory: function(user, dirPath, callback)
         {
-            var fullPath = toSafeLocalPath(dirPath); 
+            var fullPath = toSafeLocalPath(user, dirPath); 
 
             fs.readdir(fullPath, function(err, files) 
             {
@@ -118,9 +124,9 @@ module.exports = function(params)
                 callback(null, entries);
             });
         },
-        getObject: function(filename, callback)
+        getObject: function(user, filename, callback)
         {
-            var filePath = toSafeLocalPath(filename);
+            var filePath = toSafeLocalPath(user, filename);
 
             try
             {
@@ -145,40 +151,49 @@ module.exports = function(params)
                 callback(err, null);
             }
         },
-        putObject: function(filename, callback)
+        putObject: function(user, filename, callback)
         {
-            var filePath = toSafeLocalPath(filename); 
-            
-            // !!! May need to create parent dirs if they don't exist (outputFile used to do that for us)
-            // !!! May need to use mode r+ (instead of default w) to overwrite existing file
+            var filePath = toSafeLocalPath(user, filename); 
 
-            callback(null, fs.createWriteStream(filePath));
+            fs.ensureDir(path.dirname(filePath), function(err)
+            {
+                if (err)
+                {
+                    callback(err);
+                }
+                else
+                {
+                    // !!! May need to use mode r+ (instead of default w) to overwrite existing file
+                    //
+                    callback(null, fs.createWriteStream(filePath));
+                }
+            });
         },
-        copyObject: function(filename, newFilename, callback)
+        copyObject: function(user, filename, newFilename, callback)
         {
-            var filePath = toSafeLocalPath(filename); 
-            var newFilePath = toSafeLocalPath(newFilename); 
+            var filePath = toSafeLocalPath(user, filename); 
+            var newFilePath = toSafeLocalPath(user, newFilename); 
             
-            fs.copy(filePath, newFilePath, function(err)
+            fs.copy(filePath, newFilePath, function(err) // Creates directories as needed
             {
                 callback(err);
             });
         },
-        moveObject: function(filename, newFilename, callback)
+        moveObject: function(user, filename, newFilename, callback)
         {
-            var filePath = toSafeLocalPath(filename); 
-            var newFilePath = toSafeLocalPath(newFilename); 
+            var filePath = toSafeLocalPath(user, filename); 
+            var newFilePath = toSafeLocalPath(user, newFilename); 
 
-            fs.move(filePath, newFilePath, function(err)
+            fs.move(filePath, newFilePath, function(err) // Creates directories as needed
             {
                 callback(err);
             });
         },
-        deleteObject: function(filename, callback)
+        deleteObject: function(user, filename, callback)
         {
             // This will remove a file or a directory, so let's hope it's used correctly
             //
-            var filePath = toSafeLocalPath(filename);
+            var filePath = toSafeLocalPath(user, filename);
 
             var entry = getEntryDetails(filePath, filename);
 
