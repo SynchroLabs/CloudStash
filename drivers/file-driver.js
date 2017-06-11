@@ -44,7 +44,7 @@ function getEntryDetails(fullpath, filename)
 {
     var item = { name: filename };
     var fStat = fs.statSync(fullpath);
-    item.type = fStat.isFile() ? "object" : "directory"; // !!! DropBox uses .tag for type with value "file" or "folder"
+    item[".tag"] = fStat.isFile() ? "file" : "folder";
     item.size = fStat.size;
 
     return item;
@@ -111,15 +111,27 @@ module.exports = function(params)
 
             fs.readdir(fullPath, function(err, files) 
             {
-                log.info("Entries:", files);
+                // If the error is 'not found' and the dir in question is the root dir, we're just
+                // going to ignore that and return an empty dir lising (just means we haven't created
+                // this user/app path yet because it hasn't been used yet).
+                //
+                if (err && ((err.code !== 'ENOENT') || (dirPath !== '')))
+                {
+                    callback(err);
+                }
 
                 var entries = [];
 
-                files.forEach(function(file)
+                if (files)
                 {
-                    var entry = getEntryDetails(path.posix.join(fullPath, file), file);
-                    entries.push(entry);
-                });
+                    log.info("Entries:", files);
+
+                    files.forEach(function(file)
+                    {
+                        var entry = getEntryDetails(path.posix.join(fullPath, file), file);
+                        entries.push(entry);
+                    });
+                }
 
                 callback(null, entries);
             });
@@ -176,7 +188,14 @@ module.exports = function(params)
             
             fs.copy(filePath, newFilePath, function(err) // Creates directories as needed
             {
-                callback(err);
+                if (err)
+                {
+                    callback(err);
+                }
+                else
+                {
+                    callback(err, getEntryDetails(newFilePath, newFilename));
+                }
             });
         },
         moveObject: function(user, filename, newFilename, callback)
@@ -186,7 +205,14 @@ module.exports = function(params)
 
             fs.move(filePath, newFilePath, function(err) // Creates directories as needed
             {
-                callback(err);
+                if (err)
+                {
+                    callback(err);
+                }
+                else
+                {
+                    callback(err, getEntryDetails(newFilePath, newFilename));
+                }
             });
         },
         deleteObject: function(user, filename, callback)
