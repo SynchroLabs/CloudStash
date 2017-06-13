@@ -9,14 +9,17 @@ loggerModule.createTestLogger();
 var log = loggerModule.getLogger('Test');
 
 var _testSecret = "test";
+
+// var _testConfig = require('./../lib/config').getConfig('config_manta.json');
 var _testConfig = require('./../lib/config').getConfig(null, 
-{ 
-    "driver": 
+{
+    "driver":
     { 
         "provider": "file", 
         "basePath": "_mantabox_store" 
     } 
 });
+
 var server = mantaBoxServer(_testSecret, _testConfig);
 
 var testAccount = 
@@ -36,6 +39,8 @@ var testToken = jwt.sign(testAccount, _testSecret);
 // !!! Test list_folder of non-existent folder
 //
 // !!! Test download of non-existent file (I think it times out)
+//
+// !!! Test upload/download of binary files to make sure we don't have any encoding weirdness
 //
 
 // Tests below assume starting with a 1234-BEEF/TEST01 that is empty (and if successful, will leave it empty)
@@ -89,9 +94,6 @@ describe('files/upload of foo.txt to root', function() {
       })
       .expect(200, done);
   });
-});
-
-describe('files/list_folder on root after adding foo.txt file', function() {
   it('file shows up in list', function(done) {
     request(server)
       .post('/files/list_folder')

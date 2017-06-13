@@ -46,13 +46,6 @@ var path = require('path');
 
 var manta = require('manta');
 
-function getEntryDetails(mantaEntry)
-{
-    // !!! Convert to Dropbox form
-    //
-    return mantaEntry;
-}
-
 module.exports = function(params)
 {
     var basePath = params.basePath;
@@ -89,6 +82,21 @@ module.exports = function(params)
         return filePath;
     }
 
+    function getEntryDetails(mantaEntry)
+    {
+        // Convert to Dropbox form
+        //
+        var entry = { name: mantaEntry.name };
+        entry[".tag"] = (mantaEntry.type == "object") ? "file" : "folder";
+        entry.size = mantaEntry.size;
+
+        // mantaEntry.etag
+        // mantaEntry.mtime
+        // mantaEntry.parent (full Manta path)
+
+        return entry;
+    }
+
     log.debug('Manta client setup: %s', client.toString());
 
     var driver = 
@@ -100,15 +108,15 @@ module.exports = function(params)
 
             client.mkdirp(fullPath, function(err)
             {
-                if (err) 
+                if (err)
                 {
                     callback(err);
                 }
                 else 
                 {
-                    // !!! Better entry details?  (query existing dir?)
+                    // !!! Better entry details?  (query existing dir? - may have to wait)
                     //
-                    var entry = { type: "directory", file: dirPath };
+                    var entry = { type: "directory", name: dirPath };
                     callback(null, getEntryDetails(entry));
                 }
             });
@@ -122,6 +130,22 @@ module.exports = function(params)
             client.ls(fullPath, options, function(err, res)
             {
                 var entries = [];
+
+                if (err)
+                {
+                    if ((err.code == 'NOTFOUND') || (dirpath == ''))
+                    {
+                        // If the error is 'not found' and the dir in question is the root dir, we're just
+                        // going to ignore that and return an empty dir lising (just means we haven't created
+                        // this user/app path yet because it hasn't been used yet).
+                        //
+                        callback(null, entries);
+                    }
+                    else
+                    {
+                        callback(err);
+                    }
+                }
 
                 res.on('object', function (obj) 
                 {
@@ -206,7 +230,20 @@ module.exports = function(params)
                     //
                     client.ln(filePath, newFilePath, function(err) 
                     {
-                        callback(err);
+                        if (err)
+                        {
+                            callback(err);
+                        }
+                        else
+                        {
+                            // !!! Better entry details?  
+                            //
+                            //        Query source obj before copy?
+                            //        Get info on new obj after copy (may have to wait for it to show up)?
+                            //
+                            var entry = { type: "object", name: newFilename };
+                            callback(null, getEntryDetails(entry));
+                        }
                     });
                 }
             });
@@ -236,7 +273,20 @@ module.exports = function(params)
                         {
                             client.unlink(filePath, function(err)
                             {
-                                callback(err);
+                                if (err)
+                                {
+                                    callback(err);
+                                }
+                                else
+                                {
+                                    // !!! Better entry details?  
+                                    //
+                                    //        Query source obj before move?
+                                    //        Get info on obj after move (may have to wait for it to show up)?
+                                    //
+                                    var entry = { type: "object", name: newFilename };
+                                    callback(null, getEntryDetails(entry));
+                                }
                             });
                         }
                     });
