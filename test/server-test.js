@@ -374,5 +374,77 @@ describe('/files/delete of baz.txt (last remaining file)', function() {
   });
 });
 
-// !!! Need some multipart upload tests
-//
+describe('Multipart upload', function() {
+  var uploadId;
+  it('succeeds in starting upload session', function(done) {
+    request(server)
+      .post('/files/upload_session/start')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .set('Dropbox-API-Arg', '{ }')
+      .send('Foo is the word')
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert(res.body.session_id); 
+      })
+      .expect(function(res) {
+          uploadId = res.body.session_id;
+      })
+      .expect(200, done);
+  });
+  it('succeeds in appending first part using append', function(done) {
+    request(server)
+      .post('/files/upload_session/append')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .set('Dropbox-API-Arg', '{ "session_id": "' + uploadId + '", "offset": 15 }')
+      .send('Bar is the next word')
+      .expect(200, done); // !!! Verify not content returned (no c/t?)
+  });
+  it('succeeds in appending second part using append_v2', function(done) {
+    request(server)
+      .post('/files/upload_session/append_v2')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .set('Dropbox-API-Arg', '{ "cursor": { "session_id": "' + uploadId + '", "offset": 35 } }')
+      .send('Baz is the third word')
+      .expect(200, done);  // !!! Verify not content returned (no c/t?)
+  });
+  it('succeeds in finishing upload', function(done) {
+    request(server)
+      .post('/files/upload_session/finish')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .set('Dropbox-API-Arg', '{ "cursor": { "session_id": "' + uploadId + '", "offset": 56 }, "commit": { "path": "target.txt" } }')
+      .send('Fraz is the final word')
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert.equal(res.body[".tag"], 'file'); 
+          assert.equal(res.body.name, 'target.txt'); 
+          assert.equal(res.body.size, 78); 
+      })
+      .expect(200, done);
+  });
+  it('uploaded file has correct contents', function(done) {
+    request(server)
+      .post('/files/download')
+      .set('Accept', 'application/octet-stream')
+      .set('Authorization', "Bearer " + testToken)
+      .set('Dropbox-API-Arg', '{ "path": "target.txt" }')
+      .expect('Content-Type', 'application/octet-stream')
+      .expect(function(res){
+           assert.equal(res.body.toString(), 'Foo is the wordBar is the next wordBaz is the third wordFraz is the final word'); 
+      })
+      .expect(200, done);
+  });
+  it('succeeds in deleting uploaded file', function(done) {
+    request(server)
+      .post('/files/delete')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .set('Dropbox-API-Arg', '{ "path": "target.txt" }')
+      .expect(200, done);
+  });
+});
