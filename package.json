@@ -19,6 +19,7 @@
   "license": "UNLICENSED",
   "private": true,
   "dependencies": {
+    "async": "^2.4.1",
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.15.2",
     "bunyan": "^1.8.10",

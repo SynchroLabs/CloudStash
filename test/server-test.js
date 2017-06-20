@@ -373,3 +373,6 @@ describe('/files/delete of baz.txt (last remaining file)', function() {
       .expect(200, done);
   });
 });
+
+// !!! Need some multipart upload tests
+//

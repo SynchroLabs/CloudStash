@@ -5,6 +5,7 @@
 //
 var fs = require('fs-extra');
 var path = require('path');
+var async = require('async');
 
 var uuidv4 = require('uuid/v4');
 
@@ -268,20 +269,87 @@ module.exports = function(params)
         },
         finishMultipartUpload: function(user, uploadId, filename, callback)
         {
+            var uploadDirPath = toSafeLocalUserPath(user, path.join("uploads", uploadId));
             var filePath = toSafeLocalUserAppPath(user, filename); 
 
-            log.info("This is where we would join the file parts for upload '%s' and write to dest: %s", uploadId, filename);
+            log.info("Processing finishMultipartUpload for upload '%s', writing to dest: %s", uploadId, filename);
 
-            // !!! Implement
+            // Process uploaded file segments
             //
-            // !!! Get a directory listing of the files
-            // !!! Sort them based on offset
-            // !!! Verify that there are no holes
-            // !!! Stream the files in order to destination file
-            // !!! Pass getEntryDetails(filePath, filename) to callback
-            //
+            fs.readdir(uploadDirPath, function(err, files) 
+            {
+                if (err)
+                {
+                    callback(err);
+                }
+                else if (!files)
+                {
+                    callback(new Error("No files uploaded with the id:", uploadId));
+                }
+                else
+                {
+                    var entries = [];
 
-            callback(null);
+                    // Get the detailed info for uploaded file segments
+                    //
+                    files.forEach(function(file)
+                    {
+                        var entry = getEntryDetails(path.posix.join(uploadDirPath, file), file);
+                        entry.offset = parseInt(path.parse(entry.name).name);
+                        entries.push(entry);
+                    });
+
+                    // Sort entries by offset
+                    //
+                    entries.sort(function(a, b)
+                    {
+                        return a.offset - b.offset;
+                    });
+
+                    log.info("Entries", entries);
+
+                    // !!! Verify that we start at 0 and there are no holes
+                    //
+
+                    // Stream the files in order to destination file
+                    //
+                    fs.ensureDir(path.dirname(filePath), function(err)
+                    {
+                        if (err)
+                        {
+                            callback(new Error("Unable to create dir for uploaded file"));
+                            return;
+                        }
+
+                        var writeStream = fs.createWriteStream(filePath);
+                        async.eachSeries(entries, function (entry, callback) 
+                        {
+                            var currentFile = path.join(uploadDirPath, entry.name);
+                            var stream = fs.createReadStream(currentFile).on('end', function () 
+                            {
+                                callback();
+                            });
+                            stream.pipe(writeStream, { end: false });
+                        }, 
+                        function(err)
+                        {
+                            writeStream.end();
+
+                            fs.remove(uploadDirPath, function(err)
+                            {
+                                if (err)
+                                {
+                                    log.error("Failed to delete upload path for uploadID:", uploadId);
+                                }
+
+                                // Return details about newly created file
+                                //
+                                callback(null, getEntryDetails(filePath, filename));
+                            });
+                        });
+                    });
+                }
+            });
         }
     }
 
