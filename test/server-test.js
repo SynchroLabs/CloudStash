@@ -10,7 +10,12 @@ var log = loggerModule.getLogger('Test');
 
 var _testSecret = "test";
 
+// !!! Note: Manta tests pass, but there are some timing issues (file uploaded might not appear in directory list or be 
+//           available for download immediately, etc).  So these tests have all passed in one run on Manta, but they don't
+//           run clean every time.  Maybe we should just add a wait in between operations where needed (and only for Manta).
+//
 // var _testConfig = require('./../lib/config').getConfig('config_manta.json');
+
 var _testConfig = require('./../lib/config').getConfig(null, 
 {
     "driver":
@@ -24,14 +29,12 @@ var server = mantaBoxServer(_testSecret, _testConfig);
 
 var testAccount = 
 { 
-  app_id:     "TEST01",
-  account_id: "1234-BEEF"
+    app_id:     "TEST01",
+    account_id: "1234-BEEF"
 };
 
 var testToken = jwt.sign(testAccount, _testSecret);
 
-// !!! Test on Manta
-//
 // !!! Test delete of folder and contents - not implemented yet (?)
 //
 // !!! Test copy/move of folders (and their contents) - not implemented yet

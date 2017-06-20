@@ -6,6 +6,8 @@
 var fs = require('fs-extra');
 var path = require('path');
 
+var uuidv4 = require('uuid/v4');
+
 var log = require('./../lib/logger').getLogger("file-driver");
 
 // Directory lising object format:
@@ -56,21 +58,30 @@ module.exports = function(params)
 
     log.info("Using file store, basePath:", basePath);
 
-    function toSafeLocalPath(user, fileName)
+    function toSafePath(filePath)
     {
         // path.posix.normalize will move any ../ to the front, and the regex will remove them.
         //
-        var safeFilename = path.posix.normalize(fileName).replace(/^(\.\.[\/\\])+/, '');
-        var filePath = path.posix.join(basePath, user.account_id, user.app_id, safeFilename); 
+        var safePath = path.posix.normalize(filePath).replace(/^(\.\.[\/\\])+/, '');
 
         if (path.sep != '/')
         {
             // Replace forward slash with local platform seperator
             //
-            filePath = filePath.replace(/[\/]/g, path.sep);
+            safePath = filePath.replace(/[\/]/g, path.sep);
         }
 
-        return filePath;
+        return safePath;
+    }
+
+    function toSafeLocalUserPath(user, filePath)
+    {
+        return toSafePath(path.posix.join(basePath, user.account_id, filePath)); 
+    }
+
+    function toSafeLocalUserAppPath(user, filePath)
+    {
+        return toSafePath(path.posix.join(basePath, user.account_id, user.app_id, filePath)); 
     }
 
     var driver = 
@@ -78,7 +89,7 @@ module.exports = function(params)
         provider: "file",
         doesObjectExist: function(user, filename, callback)
         {
-            var filePath = toSafeLocalPath(user, filename);
+            var filePath = toSafeLocalUserAppPath(user, filename);
             try
             {
                 callback(null, fs.existsSync(filePath));
@@ -90,7 +101,7 @@ module.exports = function(params)
         },
         createDirectory: function(user, dirPath, callback)
         {
-            var fullPath = toSafeLocalPath(user, dirPath); 
+            var fullPath = toSafeLocalUserAppPath(user, dirPath); 
 
             fs.mkdirs(fullPath, function(err)
             {
@@ -107,7 +118,7 @@ module.exports = function(params)
         },
         listDirectory: function(user, dirPath, callback)
         {
-            var fullPath = toSafeLocalPath(user, dirPath); 
+            var fullPath = toSafeLocalUserAppPath(user, dirPath); 
 
             fs.readdir(fullPath, function(err, files) 
             {
@@ -138,7 +149,7 @@ module.exports = function(params)
         },
         getObject: function(user, filename, callback)
         {
-            var filePath = toSafeLocalPath(user, filename);
+            var filePath = toSafeLocalUserAppPath(user, filename);
 
             try
             {
@@ -165,7 +176,7 @@ module.exports = function(params)
         },
         putObject: function(user, filename, callback)
         {
-            var filePath = toSafeLocalPath(user, filename); 
+            var filePath = toSafeLocalUserAppPath(user, filename); 
 
             fs.ensureDir(path.dirname(filePath), function(err)
             {
@@ -183,8 +194,8 @@ module.exports = function(params)
         },
         copyObject: function(user, filename, newFilename, callback)
         {
-            var filePath = toSafeLocalPath(user, filename); 
-            var newFilePath = toSafeLocalPath(user, newFilename); 
+            var filePath = toSafeLocalUserAppPath(user, filename); 
+            var newFilePath = toSafeLocalUserAppPath(user, newFilename); 
             
             fs.copy(filePath, newFilePath, function(err) // Creates directories as needed
             {
@@ -200,8 +211,8 @@ module.exports = function(params)
         },
         moveObject: function(user, filename, newFilename, callback)
         {
-            var filePath = toSafeLocalPath(user, filename); 
-            var newFilePath = toSafeLocalPath(user, newFilename); 
+            var filePath = toSafeLocalUserAppPath(user, filename); 
+            var newFilePath = toSafeLocalUserAppPath(user, newFilename); 
 
             fs.move(filePath, newFilePath, function(err) // Creates directories as needed
             {
@@ -219,7 +230,7 @@ module.exports = function(params)
         {
             // This will remove a file or a directory, so let's hope it's used correctly
             //
-            var filePath = toSafeLocalPath(user, filename);
+            var filePath = toSafeLocalUserAppPath(user, filename);
 
             var entry = getEntryDetails(filePath, filename);
 
@@ -227,6 +238,50 @@ module.exports = function(params)
             {
                 callback(err, entry)
             });
+        },
+        startMultipartUpload: function(user, callback)
+        {
+            // File name convention:
+            //
+            //    <user>/uploads/<uuid>/<offset>.bin 
+            //
+            var uploadId = uuidv4();
+
+            var uploadPath = toSafeLocalUserPath(user, path.join("uploads", uploadId, "0.bin"));
+
+            fs.ensureDir(path.dirname(uploadPath), function(err)
+            {
+                if (err)
+                {
+                    callback(err);
+                }
+                else
+                {
+                    callback(null, uploadId, fs.createWriteStream(uploadPath));
+                }
+            });
+        },
+        multipartUpload: function(user, uploadId, offset, callback)
+        {
+            var uploadPath = toSafeLocalUserPath(user, path.join("uploads", uploadId, offset.toString() + ".bin"));
+            callback(null, fs.createWriteStream(uploadPath));
+        },
+        finishMultipartUpload: function(user, uploadId, filename, callback)
+        {
+            var filePath = toSafeLocalUserAppPath(user, filename); 
+
+            log.info("This is where we would join the file parts for upload '%s' and write to dest: %s", uploadId, filename);
+
+            // !!! Implement
+            //
+            // !!! Get a directory listing of the files
+            // !!! Sort them based on offset
+            // !!! Verify that there are no holes
+            // !!! Stream the files in order to destination file
+            // !!! Pass getEntryDetails(filePath, filename) to callback
+            //
+
+            callback(null);
         }
     }
 

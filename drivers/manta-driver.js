@@ -39,6 +39,13 @@
 //
 // ----
 //
+// Multipart uploads:
+//
+//    https://github.com/joyent/node-manta/blob/master/lib/client.js
+//    https://github.com/joyent/manta-muskie/blob/master/lib/uploads/common.js
+//
+// ----
+//
 var log = require('./../lib/logger').getLogger("manta-driver");
 
 var fs = require('fs');
@@ -77,6 +84,14 @@ module.exports = function(params)
         // path.posix.normalize will move any ../ to the front, and the regex will remove them.
         //
         var safeFilename = path.posix.normalize(fileName).replace(/^(\.\.[\/\\])+/, '');
+
+        // !!! This forms a path of basePath/account_id/app_id/xxxxx - For scale, we assume the account_id
+        //     is a GUID (randomly distributed digitis).  In order to keep directories from getting too large, 
+        //     we can break down the path further using the first three pairs of characters from the GUID, for
+        //     a path like: basePath/AB/CD/EF/GHIJKLxxx/app_id/xxxxx.  In that model, with 100m users acounts,
+        //     the first two levels of directories will be "full" (256 entries), and the third level will contain
+        //     an average of 6 accounts.
+        //
         var filePath = path.posix.join(basePath, user.account_id, user.app_id, safeFilename); 
 
         return filePath;
@@ -323,6 +338,30 @@ module.exports = function(params)
                             callback(null, getEntryDetails(entry));
                         }
                     });
+                }
+            });
+        },
+        startMultipartUpload: function(user, callback)
+        {
+            // Multipart upload RFD - https://github.com/joyent/rfd/blob/master/rfd/0065/README.md
+            //
+            var tmpPath = path.posix.join(basePath, "temp0000"); 
+
+            var options = {
+                account: params.user
+            }
+
+            client.createUpload(tmpPath, options, function(err, uploadId)
+            {
+                if (err)
+                {
+                    log.error("Error on creatUpload", err);
+                    callback(err);
+                }
+                else
+                {
+                    log.info("createUpload id:", uploadId);
+                    callback(null, uploadId);
                 }
             });
         }
