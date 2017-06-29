@@ -214,6 +214,10 @@ module.exports = function(params)
     var driver = 
     {
         provider: "file",
+        getEntrySortKey: function(entry)
+        {
+            return getEntrySortKey(entry);
+        },
         doesObjectExist: function(user, filename, callback)
         {
             var filePath = toSafeLocalUserAppPath(user, filename);
