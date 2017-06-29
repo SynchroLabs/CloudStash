@@ -162,6 +162,55 @@ module.exports = function(params)
         });
     }
 
+    function findLatestInFiles(user, latestEntry, fullPath, files, recursive, callback)
+    {
+        async.eachLimit(files, 10, function(file, fileComplete)
+        {
+            var entry = getEntryDetails(user, path.posix.join(fullPath, file), file);
+
+            var entrySortKey = getEntrySortKey(entry);
+            var latestEntrySortKey = getEntrySortKey(latestEntry);
+
+            if (!latestEntrySortKey || (entrySortKey > latestEntrySortKey))
+            {
+                latestEntry["server_modified"] = entry["server_modified"];
+                latestEntry["path_display"] = entry["path_display"];
+            }
+
+            if (recursive && (entry[".tag"] == "folder"))
+            {
+                findLatestInDirectory(user, latestEntry, path.posix.join(fullPath, entry.name), recursive, fileComplete);
+            }
+            else
+            {
+                fileComplete();
+            }
+        }, 
+        function(err)
+        {
+            callback(err);
+        });
+    }
+
+    function findLatestInDirectory(user, latestEntry, dirpath, recursive, callback)
+    {
+        fs.readdir(dirpath, function(err, files) 
+        {
+            if (err)
+            {
+                callback(err);
+            }
+            else if (files)
+            {
+                findLatestInFiles(user, latestEntry, dirpath, files, recursive, callback);
+            }
+            else
+            {
+                callback();
+            }
+        });
+    }
+
     var driver = 
     {
         provider: "file",
@@ -227,7 +276,7 @@ module.exports = function(params)
                                 entries.splice(limit);
                                 hasMore = true;
                             }
-                            callback(err, entries, hasMore);
+                            callback(null, entries, hasMore);
                         }
                     })
                 }
@@ -236,6 +285,44 @@ module.exports = function(params)
                     callback(null, [], false);
                 }
             });
+        },
+        getLatestObject: function(user, dirPath, recursive, callback)
+        {
+            var fullPath = toSafeLocalUserAppPath(user, dirPath); 
+
+            fs.readdir(fullPath, function(err, files) 
+            {
+                // If the error is 'not found' and the dir in question is the root dir, we're just
+                // going to ignore that and return an empty dir lising (just means we haven't created
+                // this user/app path yet because it hasn't been used yet).
+                //
+                if (err && ((err.code !== 'ENOENT') || (dirPath !== '')))
+                {
+                    callback(err);
+                }
+
+                if (files)
+                {
+                    var latestEntry = {};
+
+                    findLatestInFiles(user, latestEntry, fullPath, files, recursive, function(err)
+                    {
+                        if (err)
+                        {
+                            callback(err);
+                        }
+                        else
+                        {
+                            callback(null, latestEntry["server_modified"] ? latestEntry : null);
+                        }
+                    })
+                }
+                else
+                {
+                    callback(null, null);
+                }
+            });
+
         },
         getObject: function(user, filename, callback)
         {
