@@ -99,15 +99,34 @@ module.exports = function(params)
 
     function getEntryDetails(mantaEntry)
     {
+        // Manta object
+        /*
+        { 
+            name: 'baz.txt',
+            etag: '6eaac329-47be-c6d3-de6b-80897012f60d',
+            size: 15,
+            type: 'object',
+            mtime: '2017-06-26T07:42:11.339Z',
+            durability: 2,
+            parent: '/synchro/stor/mantabox/1234-BEEF/TEST01' 
+        }
+        */
+
+        // Manta directory
+        /*
+        { 
+            name: 'test_folder',
+            type: 'directory',
+            mtime: '2017-06-26T07:42:04.057Z',
+            parent: '/synchro/stor/mantabox/1234-BEEF/TEST01' 
+        }
+        */
+
         // Convert to Dropbox form
         //
         var entry = { name: mantaEntry.name };
         entry[".tag"] = (mantaEntry.type == "object") ? "file" : "folder";
         entry.size = mantaEntry.size;
-
-        // mantaEntry.etag
-        // mantaEntry.mtime
-        // mantaEntry.parent (full Manta path)
 
         return entry;
     }
@@ -161,29 +180,35 @@ module.exports = function(params)
                         callback(err);
                     }
                 }
-
-                res.on('object', function (obj) 
-                {
-                    log.info("file", obj);
-                    entries.push(getEntryDetails(obj));
-                });
-
-                res.on('directory', function (dir) 
-                {
-                    log.info("dir", dir);
-                    entries.push(getEntryDetails(dir));
-                });
-
-                res.once('error', function (err) 
-                {
-                    log.error(err);
-                    callback(err);
-                });
-
-                res.once('end', function () 
+                else if (res == null)
                 {
                     callback(null, entries);
-                });
+                }
+                else
+                {
+                    res.on('object', function (obj) 
+                    {
+                        log.info("file", obj);
+                        entries.push(getEntryDetails(obj));
+                    });
+
+                    res.on('directory', function (dir) 
+                    {
+                        log.info("dir", dir);
+                        entries.push(getEntryDetails(dir));
+                    });
+
+                    res.once('error', function (err) 
+                    {
+                        log.error(err);
+                        callback(err);
+                    });
+
+                    res.once('end', function () 
+                    {
+                        callback(null, entries);
+                    });
+                }
             });
         },
         getObject: function(user, filename, callback)

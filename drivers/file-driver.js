@@ -7,6 +7,8 @@ var fs = require('fs-extra');
 var path = require('path');
 var async = require('async');
 
+var lodash = require('lodash');
+
 var uuidv4 = require('uuid/v4');
 
 var log = require('./../lib/logger').getLogger("file-driver");
@@ -43,21 +45,36 @@ function getObjects(dirPath)
     return output;
 }
 
-function getEntryDetails(fullpath, filename)
-{
-    var item = { name: filename };
-    var fStat = fs.statSync(fullpath);
-    item[".tag"] = fStat.isFile() ? "file" : "folder";
-    item.size = fStat.size;
-
-    return item;
-}
-
 module.exports = function(params)
 {
     var basePath = params.basePath;
 
     log.info("Using file store, basePath:", basePath);
+
+    function getEntryDetails(user, fullpath, filename)
+    {
+        var fStat = fs.statSync(fullpath);
+        var displayPath = "/" + path.relative(path.posix.join(basePath, user.account_id, user.app_id), fullpath);
+
+        var item = { };
+        item[".tag"] = fStat.isFile() ? "file" : "folder";
+        item["name"] = filename;
+        item["path_lower"] = displayPath.toLowerCase();
+        item["path_display"] = displayPath;
+        // item["id"]
+        // item["client_modified"]
+        item["server_modified"] = fStat.mtime.toISOString();
+        //item["rev"]
+        item["size"] = fStat.size;
+        // item["content_hash"]
+
+        return item;
+    }
+
+    function getEntrySortKey(entry)
+    {
+        return entry["server_modified"] + entry["path_display"];
+    }
 
     function toSafePath(filePath)
     {
@@ -83,6 +100,66 @@ module.exports = function(params)
     function toSafeLocalUserAppPath(user, filePath)
     {
         return toSafePath(path.posix.join(basePath, user.account_id, user.app_id, filePath)); 
+    }
+
+    function processFiles(user, entries, fullPath, files, recursive, limit, cursor, callback)
+    {
+        log.info("Entries for dir %s: %s", fullPath, files);
+
+        async.eachLimit(files, 10, function(file, fileComplete)
+        {
+            var entry = getEntryDetails(user, path.posix.join(fullPath, file), file);
+
+            // If there is a cursor, only process entries greater than the cursor
+            //
+            if (!cursor || (getEntrySortKey(cursor) < getEntrySortKey(entry)))
+            {
+                // This will insert into "entries" such that "entries" will be/stay in sorted order
+                //
+                entries.splice(lodash.sortedIndexBy(entries, entry, function(o){ return getEntrySortKey(o); }), 0, entry);
+
+                // This will keep the list from growing beyond more than one over the limit (we purposely leave the "extra"
+                // entry so that at the end the top level function will be able to see that we went past the limit, and will
+                // have the "next" entry after the limit, in case that's useful).
+                //
+                if (entries.length > limit + 1)
+                {
+                    entries.splice(limit + 1);
+                }
+            }
+
+            if (recursive && (entry[".tag"] == "folder"))
+            {
+                processDirectory(user, entries, path.posix.join(fullPath, entry.name), recursive, limit, cursor, fileComplete);
+            }
+            else
+            {
+                fileComplete();
+            }
+        }, 
+        function(err)
+        {
+            callback(err);
+        });
+    }
+
+    function processDirectory(user, entries, dirpath, recursive, limit, cursor, callback)
+    {
+        fs.readdir(dirpath, function(err, files) 
+        {
+            if (err)
+            {
+                callback(err);
+            }
+            else if (files)
+            {
+                processFiles(user, entries, dirpath, files, recursive, limit, cursor, callback);
+            }
+            else
+            {
+                callback();
+            }
+        });
     }
 
     var driver = 
@@ -112,12 +189,12 @@ module.exports = function(params)
                 }
                 else
                 {
-                    var entry = getEntryDetails(fullPath, dirPath);
+                    var entry = getEntryDetails(user, fullPath, dirPath);
                     callback(err, entry);
                 }
             });
         },
-        listDirectory: function(user, dirPath, callback)
+        listDirectory: function(user, dirPath, recursive, limit, cursor, callback)
         {
             var fullPath = toSafeLocalUserAppPath(user, dirPath); 
 
@@ -132,20 +209,32 @@ module.exports = function(params)
                     callback(err);
                 }
 
-                var entries = [];
-
                 if (files)
                 {
-                    log.info("Entries:", files);
+                    var entries = [];
 
-                    files.forEach(function(file)
+                    processFiles(user, entries, fullPath, files, recursive, limit, cursor, function(err)
                     {
-                        var entry = getEntryDetails(path.posix.join(fullPath, file), file);
-                        entries.push(entry);
-                    });
+                        if (err)
+                        {
+                            callback(err);
+                        }
+                        else
+                        {
+                            var hasMore = false;
+                            if (entries.length > limit)
+                            {
+                                entries.splice(limit);
+                                hasMore = true;
+                            }
+                            callback(err, entries, hasMore);
+                        }
+                    })
                 }
-
-                callback(null, entries);
+                else
+                {
+                    callback(null, [], false);
+                }
             });
         },
         getObject: function(user, filename, callback)
@@ -206,7 +295,7 @@ module.exports = function(params)
                 }
                 else
                 {
-                    callback(err, getEntryDetails(newFilePath, newFilename));
+                    callback(err, getEntryDetails(user, newFilePath, newFilename));
                 }
             });
         },
@@ -223,7 +312,7 @@ module.exports = function(params)
                 }
                 else
                 {
-                    callback(err, getEntryDetails(newFilePath, newFilename));
+                    callback(err, getEntryDetails(user, newFilePath, newFilename));
                 }
             });
         },
@@ -233,7 +322,7 @@ module.exports = function(params)
             //
             var filePath = toSafeLocalUserAppPath(user, filename);
 
-            var entry = getEntryDetails(filePath, filename);
+            var entry = getEntryDetails(user, filePath, filename);
 
             fs.remove(filePath, function(err)
             {
@@ -294,7 +383,7 @@ module.exports = function(params)
                     //
                     files.forEach(function(file)
                     {
-                        var entry = getEntryDetails(path.posix.join(uploadDirPath, file), file);
+                        var entry = getEntryDetails(user, path.posix.join(uploadDirPath, file), file);
                         entry.offset = parseInt(path.parse(entry.name).name);
                         entries.push(entry);
                     });
@@ -344,7 +433,7 @@ module.exports = function(params)
 
                                 // Return details about newly created file
                                 //
-                                callback(null, getEntryDetails(filePath, filename));
+                                callback(null, getEntryDetails(user, filePath, filename));
                             });
                         });
                     });

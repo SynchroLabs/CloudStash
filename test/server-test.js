@@ -220,6 +220,23 @@ describe('/files/copy foo.txt to test_folder/bar.txt', function() {
   });
 });
 
+describe('/files/copy foo.txt to existing test_folder/bar.txt', function() {
+  it('succeeds in copying file over existing', function(done) {
+    request(server)
+      .post('/files/copy')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .set('Dropbox-API-Arg', '{ "from_path": "foo.txt", "to_path": "test_folder/bar.txt" }')
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert.equal(res.body[".tag"], 'file'); 
+          assert.equal(res.body.name, 'test_folder/bar.txt'); 
+      })
+      .expect(200, done);
+  });
+});
+
 describe('/files/delete of foo.txt', function() {
   it('succeeds in deleting file', function(done) {
     request(server)
