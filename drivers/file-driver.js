@@ -13,38 +13,6 @@ var uuidv4 = require('uuid/v4');
 
 var log = require('./../lib/logger').getLogger("file-driver");
 
-// Directory lising object format:
-//
-// [
-//   { type: "file", name: "foo.txt" },
-//   { type: "directory", name: "bar", objects: [
-//       { type: "file", name: "baz.txt" }  
-//   ]}
-// ]
-//
-function getObjects(dirPath)
-{
-    var output = [];
-
-    var fileObjects = fs.readdirSync(dirPath);
-    for (var i = 0; i < fileObjects.length; i++)
-    {
-        log.debug("Found file object: %s on path: %s", fileObjects[i], dirPath);
-        var objPath = path.join(dirPath, fileObjects[i]);
-        var stats = fs.statSync(objPath);
-        if (stats.isDirectory())
-        {
-            output.push({ type: "directory", name: fileObjects[i], objects: getObjects(objPath) });
-        }
-        else
-        {
-            output.push({ type: "file", name: fileObjects[i] });
-        }
-    }
-
-    return output;
-}
-
 module.exports = function(params)
 {
     var basePath = params.basePath;
@@ -74,6 +42,22 @@ module.exports = function(params)
     function getEntrySortKey(entry)
     {
         return entry["server_modified"] + entry["path_display"];
+    }
+
+    function getCursorItem(entry)
+    {
+        var cursorItem = null;
+
+        if (entry)
+        {
+            cursorItem = 
+            {
+                "server_modified": entry["server_modified"],
+                "path_display": entry["path_display"]
+            }
+        }
+
+        return cursorItem;
     }
 
     function toSafePath(filePath)
@@ -214,21 +198,9 @@ module.exports = function(params)
     var driver = 
     {
         provider: "file",
-        getEntrySortKey: function(entry)
+        isCursorItemNewer: function(item1, item2)
         {
-            return getEntrySortKey(entry);
-        },
-        doesObjectExist: function(user, filename, callback)
-        {
-            var filePath = toSafeLocalUserAppPath(user, filename);
-            try
-            {
-                callback(null, fs.existsSync(filePath));
-            }
-            catch (err)
-            {
-                callback(err);
-            }
+            return (!item1 || (getEntrySortKey(item1) < getEntrySortKey(item2)));
         },
         createDirectory: function(user, dirPath, callback)
         {
@@ -280,17 +252,20 @@ module.exports = function(params)
                                 entries.splice(limit);
                                 hasMore = true;
                             }
-                            callback(null, entries, hasMore);
+
+                            var cursorItem = getCursorItem(entries[entries.length-1]);
+
+                            callback(null, entries, hasMore, cursorItem);
                         }
                     })
                 }
                 else
                 {
-                    callback(null, [], false);
+                    callback(null, [], false, null);
                 }
             });
         },
-        getLatestObject: function(user, dirPath, recursive, callback)
+        getLatestCursorItem: function(user, dirPath, recursive, callback)
         {
             var fullPath = toSafeLocalUserAppPath(user, dirPath); 
 
@@ -337,8 +312,9 @@ module.exports = function(params)
                 var stats = fs.statSync(filePath);
                 if (stats.isDirectory())
                 {
-                    var dir = getObjects(filePath);
-                    callback(null, dir);
+                    // !!! This should only be called for objects (not directories).  Maybe look at what DropBox/Manta do.
+                    //
+                    callback(new Error("getObject called on directory"));
                 }
                 else
                 {
