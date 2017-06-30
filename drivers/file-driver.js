@@ -86,115 +86,6 @@ module.exports = function(params)
         return toSafePath(path.posix.join(basePath, user.account_id, user.app_id, filePath)); 
     }
 
-    function processFiles(user, entries, fullPath, files, recursive, limit, cursor, callback)
-    {
-        log.info("Entries for dir %s: %s", fullPath, files);
-
-        async.eachLimit(files, 10, function(file, fileComplete)
-        {
-            var entry = getEntryDetails(user, path.posix.join(fullPath, file), file);
-
-            // If there is a cursor, only process entries greater than the cursor
-            //
-            if (!cursor || (getEntrySortKey(cursor) < getEntrySortKey(entry)))
-            {
-                // This will insert into "entries" such that "entries" will be/stay in sorted order
-                //
-                entries.splice(lodash.sortedIndexBy(entries, entry, function(o){ return getEntrySortKey(o); }), 0, entry);
-
-                // This will keep the list from growing beyond more than one over the limit (we purposely leave the "extra"
-                // entry so that at the end the top level function will be able to see that we went past the limit, and will
-                // have the "next" entry after the limit, in case that's useful).
-                //
-                if (entries.length > limit + 1)
-                {
-                    entries.splice(limit + 1);
-                }
-            }
-
-            if (recursive && (entry[".tag"] == "folder"))
-            {
-                processDirectory(user, entries, path.posix.join(fullPath, entry.name), recursive, limit, cursor, fileComplete);
-            }
-            else
-            {
-                fileComplete();
-            }
-        }, 
-        function(err)
-        {
-            callback(err);
-        });
-    }
-
-    function processDirectory(user, entries, dirpath, recursive, limit, cursor, callback)
-    {
-        fs.readdir(dirpath, function(err, files) 
-        {
-            if (err)
-            {
-                callback(err);
-            }
-            else if (files)
-            {
-                processFiles(user, entries, dirpath, files, recursive, limit, cursor, callback);
-            }
-            else
-            {
-                callback();
-            }
-        });
-    }
-
-    function findLatestInFiles(user, latestEntry, fullPath, files, recursive, callback)
-    {
-        async.eachLimit(files, 10, function(file, fileComplete)
-        {
-            var entry = getEntryDetails(user, path.posix.join(fullPath, file), file);
-
-            var entrySortKey = getEntrySortKey(entry);
-            var latestEntrySortKey = getEntrySortKey(latestEntry);
-
-            if (!latestEntrySortKey || (entrySortKey > latestEntrySortKey))
-            {
-                latestEntry["server_modified"] = entry["server_modified"];
-                latestEntry["path_display"] = entry["path_display"];
-            }
-
-            if (recursive && (entry[".tag"] == "folder"))
-            {
-                findLatestInDirectory(user, latestEntry, path.posix.join(fullPath, entry.name), recursive, fileComplete);
-            }
-            else
-            {
-                fileComplete();
-            }
-        }, 
-        function(err)
-        {
-            callback(err);
-        });
-    }
-
-    function findLatestInDirectory(user, latestEntry, dirpath, recursive, callback)
-    {
-        fs.readdir(dirpath, function(err, files) 
-        {
-            if (err)
-            {
-                callback(err);
-            }
-            else if (files)
-            {
-                findLatestInFiles(user, latestEntry, dirpath, files, recursive, callback);
-            }
-            else
-            {
-                callback();
-            }
-        });
-    }
-
     var driver = 
     {
         provider: "file",
@@ -221,87 +112,156 @@ module.exports = function(params)
         },
         listDirectory: function(user, dirPath, recursive, limit, cursor, callback)
         {
-            var fullPath = toSafeLocalUserAppPath(user, dirPath); 
+            var maxConcurrency = 4;
 
-            fs.readdir(fullPath, function(err, files) 
+            var entries = [];
+
+            var q = async.queue(function(task, done) 
             {
-                // If the error is 'not found' and the dir in question is the root dir, we're just
-                // going to ignore that and return an empty dir lising (just means we haven't created
-                // this user/app path yet because it hasn't been used yet).
-                //
-                if (err && ((err.code !== 'ENOENT') || (dirPath !== '')))
-                {
-                    callback(err);
-                }
+                var fullPath = toSafeLocalUserAppPath(user, task.dirpath);
 
-                if (files)
+                fs.readdir(fullPath, function(err, files) 
                 {
-                    var entries = [];
-
-                    processFiles(user, entries, fullPath, files, recursive, limit, cursor, function(err)
+                    // If the error is 'not found' and the dir in question is the root dir, we're just
+                    // going to ignore that and return an empty dir lising (just means we haven't created
+                    // this user/app path yet because it hasn't been used yet).
+                    //
+                    if (err && ((err.code !== 'ENOENT') || (task.dirpath !== '')))
                     {
-                        if (err)
+                        done(err);
+                    }
+                    else
+                    {
+                        if (files)
                         {
-                            callback(err);
-                        }
-                        else
-                        {
-                            var hasMore = false;
-                            if (entries.length > limit)
+                            files.forEach(function(file)
                             {
-                                entries.splice(limit);
-                                hasMore = true;
-                            }
+                                var entry = getEntryDetails(user, path.posix.join(fullPath, file), file);
 
-                            var cursorItem = getCursorItem(entries[entries.length-1]);
+                                // If there is a cursor, only process entries greater than the cursor
+                                //
+                                if (!cursor || (getEntrySortKey(cursor) < getEntrySortKey(entry)))
+                                {
+                                    // This will insert into "entries" such that "entries" will be/stay in sorted order
+                                    //
+                                    entries.splice(lodash.sortedIndexBy(entries, entry, function(o){ return getEntrySortKey(o); }), 0, entry);
 
-                            callback(null, entries, hasMore, cursorItem);
+                                    // This will keep the list from growing beyond more than one over the limit (we purposely
+                                    // leave the "extra" entry so that at the end we will be able to see that we went past
+                                    // the limit).
+                                    //
+                                    if (entries.length > limit + 1)
+                                    {
+                                        entries.splice(limit + 1);
+                                    }
+                                }
+
+                                if (recursive && (entry[".tag"] == "folder"))
+                                {
+                                    q.push({ dirpath: path.posix.join(task.dirpath, entry.name) });
+                                }
+                            });
                         }
-                    })
-                }
-                else
+
+                        done();
+                    }
+                });
+            }, maxConcurrency);
+
+            q.error = function(err, task)
+            {
+                q.kill();
+                callback(err);
+            };
+
+            q.drain = function() 
+            {
+                var hasMore = false;
+                var cursorItem = cursor && cursor.lastItem;
+
+                if (entries.length > limit)
                 {
-                    callback(null, [], false, null);
+                    entries.splice(limit);
+                    hasMore = true;
                 }
-            });
+
+                if (entries.length > 0)
+                {
+                    cursorItem = getCursorItem(entries[entries.length-1]);
+                }
+
+                callback(null, entries, hasMore, cursorItem);
+            };
+
+            q.push({ dirpath: dirPath });
         },
         getLatestCursorItem: function(user, dirPath, recursive, callback)
         {
-            var fullPath = toSafeLocalUserAppPath(user, dirPath); 
+            var maxConcurrency = 4;
 
-            fs.readdir(fullPath, function(err, files) 
+            var latestEntry;
+
+            var q = async.queue(function(task, done) 
             {
-                // If the error is 'not found' and the dir in question is the root dir, we're just
-                // going to ignore that and return an empty dir lising (just means we haven't created
-                // this user/app path yet because it hasn't been used yet).
-                //
-                if (err && ((err.code !== 'ENOENT') || (dirPath !== '')))
-                {
-                    callback(err);
-                }
+                var fullPath = toSafeLocalUserAppPath(user, task.dirpath);
 
-                if (files)
+                fs.readdir(fullPath, function(err, files) 
                 {
-                    var latestEntry = {};
-
-                    findLatestInFiles(user, latestEntry, fullPath, files, recursive, function(err)
+                    // If the error is 'not found' and the dir in question is the root dir, we're just
+                    // going to ignore that and return an empty dir lising (just means we haven't created
+                    // this user/app path yet because it hasn't been used yet).
+                    //
+                    if (err && ((err.code !== 'ENOENT') || (task.dirpath !== '')))
                     {
-                        if (err)
+                        done(err);
+                    }
+                    else
+                    {
+                        if (files)
                         {
-                            callback(err);
-                        }
-                        else
-                        {
-                            callback(null, latestEntry["server_modified"] ? latestEntry : null);
-                        }
-                    })
-                }
-                else
-                {
-                    callback(null, null);
-                }
-            });
+                            files.forEach(function(file)
+                            {
+                                var entry = getEntryDetails(user, path.posix.join(fullPath, file), file);
 
+                                if (!latestEntry)
+                                {
+                                    latestEntry = entry;
+                                }
+                                else
+                                {
+                                    var entrySortKey = getEntrySortKey(entry);
+                                    var latestEntrySortKey = getEntrySortKey(latestEntry);
+
+                                    if (entrySortKey > latestEntrySortKey)
+                                    {
+                                        latestEntry = entry;
+                                    }
+                                }
+
+                                if (recursive && (entry[".tag"] == "folder"))
+                                {
+                                    q.push({ dirpath: path.posix.join(task.dirpath, entry.name) });
+                                }
+                            });
+                        }
+
+                        done();
+                    }
+                });
+            }, maxConcurrency);
+
+            q.error = function(err, task)
+            {
+                q.kill();
+                callback(err);
+            };
+
+            q.drain = function() 
+            {
+                callback(null, getCursorItem(latestEntry));
+            };
+
+            q.push({ dirpath: dirPath });
         },
         getObject: function(user, filename, callback)
         {

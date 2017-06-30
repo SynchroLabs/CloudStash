@@ -86,7 +86,7 @@ module.exports = function(params)
         var safeFilename = path.posix.normalize(fileName).replace(/^(\.\.[\/\\])+/, '');
 
         // !!! This forms a path of basePath/account_id/app_id/xxxxx - For scale, we assume the account_id
-        //     is a GUID (randomly distributed digitis).  In order to keep directories from getting too large, 
+        //     is a GUID (randomly distributed digits).  In order to keep directories from getting too large, 
         //     we can break down the path further using the first three pairs of characters from the GUID, for
         //     a path like: basePath/AB/CD/EF/GHIJKLxxx/app_id/xxxxx.  In that model, with 100m users acounts,
         //     the first two levels of directories will be "full" (256 entries), and the third level will contain
@@ -97,7 +97,7 @@ module.exports = function(params)
         return filePath;
     }
 
-    function getEntryDetails(mantaEntry)
+    function getEntryDetails(user, mantaEntry)
     {
         // Manta object
         /*
@@ -122,13 +122,50 @@ module.exports = function(params)
         }
         */
 
+        var fullpath = path.posix.join(mantaEntry.parent, mantaEntry.name);
+        var displayPath = "/" + path.relative(path.posix.join(basePath, user.account_id, user.app_id), fullpath);
+
         // Convert to Dropbox form
         //
-        var entry = { name: mantaEntry.name };
-        entry[".tag"] = (mantaEntry.type == "object") ? "file" : "folder";
-        entry.size = mantaEntry.size;
+        var item = { };
+        item[".tag"] = (mantaEntry.type == "object") ? "file" : "folder";
+        item["name"] = mantaEntry.name;
 
-        return entry;
+        item["path_lower"] = displayPath.toLowerCase();
+        item["path_display"] = displayPath;
+        // item["id"]
+        // item["client_modified"]
+        item["server_modified"] = mantaEntry.mtime;
+        //item["rev"]
+        if (mantaEntry.size)
+        {
+            // Not present on directory entry
+            item["size"] = mantaEntry.size;
+        }
+        // item["content_hash"]
+
+        return item;
+    }
+
+    function getEntrySortKey(entry)
+    {
+        return entry["server_modified"] + entry["path_display"];
+    }
+
+    function getCursorItem(entry)
+    {
+        var cursorItem = null;
+
+        if (entry)
+        {
+            cursorItem = 
+            {
+                "server_modified": entry["server_modified"],
+                "path_display": entry["path_display"]
+            }
+        }
+
+        return cursorItem;
     }
 
     log.debug('Manta client setup: %s', client.toString());
@@ -136,6 +173,10 @@ module.exports = function(params)
     var driver = 
     {
         provider: "manta",
+        isCursorItemNewer: function(item1, item2)
+        {
+            return (!item1 || (getEntrySortKey(item1) < getEntrySortKey(item2)));
+        },
         createDirectory: function(user, dirPath, callback)
         {
             var fullPath = toSafeLocalPath(user, dirPath); 
@@ -151,13 +192,15 @@ module.exports = function(params)
                     // !!! Better entry details?  (query existing dir? - may have to wait)
                     //
                     var entry = { type: "directory", name: dirPath };
-                    callback(null, getEntryDetails(entry));
+                    callback(null, getEntryDetails(user, entry));
                 }
             });
         },
-        listDirectory: function(user, dirpath, callback)
+        listDirectory: function(user, dirPath, recursive, limit, cursor, callback)
         {
-            var fullPath = toSafeLocalPath(user, dirpath);
+            // !!! Implement recursive, limit, cursor, and return cursor item
+            //
+            var fullPath = toSafeLocalPath(user, dirPath);
 
             var options = {};
 
@@ -167,7 +210,7 @@ module.exports = function(params)
 
                 if (err)
                 {
-                    if ((err.code == 'NOTFOUND') || (dirpath == ''))
+                    if ((err.code == 'NOTFOUND') || (dirPath == ''))
                     {
                         // If the error is 'not found' and the dir in question is the root dir, we're just
                         // going to ignore that and return an empty dir lising (just means we haven't created
@@ -189,13 +232,13 @@ module.exports = function(params)
                     res.on('object', function (obj) 
                     {
                         log.info("file", obj);
-                        entries.push(getEntryDetails(obj));
+                        entries.push(getEntryDetails(user, obj));
                     });
 
                     res.on('directory', function (dir) 
                     {
                         log.info("dir", dir);
-                        entries.push(getEntryDetails(dir));
+                        entries.push(getEntryDetails(user, dir));
                     });
 
                     res.once('error', function (err) 
@@ -210,6 +253,10 @@ module.exports = function(params)
                     });
                 }
             });
+        },
+        getLatestCursorItem: function(user, dirPath, recursive, callback)
+        {
+            // !!! Implement
         },
         getObject: function(user, filename, callback)
         {
@@ -282,7 +329,7 @@ module.exports = function(params)
                             //        Get info on new obj after copy (may have to wait for it to show up)?
                             //
                             var entry = { type: "object", name: newFilename };
-                            callback(null, getEntryDetails(entry));
+                            callback(null, getEntryDetails(user, entry));
                         }
                     });
                 }
@@ -325,7 +372,7 @@ module.exports = function(params)
                                     //        Get info on obj after move (may have to wait for it to show up)?
                                     //
                                     var entry = { type: "object", name: newFilename };
-                                    callback(null, getEntryDetails(entry));
+                                    callback(null, getEntryDetails(user, entry));
                                 }
                             });
                         }
@@ -360,7 +407,7 @@ module.exports = function(params)
                         }
                         else 
                         {
-                            callback(null, getEntryDetails(entry));
+                            callback(null, getEntryDetails(user, entry));
                         }
                     });
                 }
