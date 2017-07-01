@@ -209,10 +209,8 @@ module.exports = function(params)
             {
                 var fullPath = toSafeLocalPath(user, task.dirpath);
 
-                // !!! This will only get us the first "page" of responses (default 256 items, max 1,000).  We need a mechanism
-                //     to also get any subsequent pages.  There seems to be a facility to specificy the sort (by name or mtime)
-                //     and specify the last item as a "marker" for the subsequent call.  Docs are sketchy on all of this.  Best
-                //     ref seems to be the source for the Node.js Manta lib:
+                // !!! It appears from the source code that client.ls will make multiple underlying REST API
+                //     calls and page through the entries without us havint to do anything special.
                 //
                 //         https://github.com/joyent/node-manta/blob/master/lib/client.js
                 //
@@ -237,7 +235,7 @@ module.exports = function(params)
                     }
                     else
                     {
-                        function onItem(item)
+                        res.on('entry', function(item)
                         {
                             var entry = getEntryDetails(user, item);
                             log.info("Entry", entry);
@@ -264,10 +262,7 @@ module.exports = function(params)
                             {
                                 q.push({ dirpath: path.posix.join(task.dirpath, entry.name) });
                             }
-                        }
-
-                        res.on('object', onItem);
-                        res.on('directory', onItem);
+                        });
 
                         res.once('error', function (err) 
                         {
@@ -343,7 +338,7 @@ module.exports = function(params)
                     }
                     else
                     {
-                        function onItem(item)
+                        res.on('entry', function(item)
                         {
                             var entry = getEntryDetails(user, item);
                             log.info("Entry", entry);
@@ -367,10 +362,7 @@ module.exports = function(params)
                             {
                                 q.push({ dirpath: path.posix.join(task.dirpath, entry.name) });
                             }
-                        }
-
-                        res.on('object', onItem);
-                        res.on('directory', onItem);
+                        });
 
                         res.once('error', function (err) 
                         {

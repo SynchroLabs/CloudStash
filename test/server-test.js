@@ -391,6 +391,15 @@ describe('/files/delete of baz.txt (last remaining file)', function() {
   });
 });
 
+//
+// !!! list_folder + list_folder/continue (cursor, limit, hasmore, etc) - recursive and non-recursive
+// !!! list_folder/get_latest_cursor, list_folder/continue (empty), add file, list_folder/continue (new file shows up)
+// !!! list_folder/get_latest_cursor, list_folder/longpoll - this on might be tricky
+//
+
+//
+// !!! Only if file driver (not implemented in Manta yet)
+//
 describe('Multipart upload', function() {
   var uploadId;
   it('succeeds in starting upload session', function(done) {
