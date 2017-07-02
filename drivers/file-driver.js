@@ -31,7 +31,12 @@ module.exports = function(params)
         item["path_display"] = displayPath;
         // item["id"]
         // item["client_modified"]
-        item["server_modified"] = fStat.mtime.toISOString();
+
+        // At least in MacOS, the mtime of a directory is equal to the mtime of the most recent file it contains.
+        // For our purposes, we need the last time the directory itself was modified, which on a file-based
+        // implementation (with no properties, integral rename, etc), is the creation time.
+        //
+        item["server_modified"] = fStat.isFile() ? fStat.mtime.toISOString() : fStat.birthtime.toISOString();
         //item["rev"]
         item["size"] = fStat.size;
         // item["content_hash"]

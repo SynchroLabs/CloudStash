@@ -1,5 +1,8 @@
 var request = require('supertest');
 var assert = require('assert');
+
+var async = require('async');
+
 var jwt = require('jsonwebtoken');
 
 var mantaBoxServer = require('./../lib/server');
@@ -391,11 +394,443 @@ describe('/files/delete of baz.txt (last remaining file)', function() {
   });
 });
 
-//
-// !!! list_folder + list_folder/continue (cursor, limit, hasmore, etc) - recursive and non-recursive
-// !!! list_folder/get_latest_cursor, list_folder/continue (empty), add file, list_folder/continue (new file shows up)
-// !!! list_folder/get_latest_cursor, list_folder/longpoll - this on might be tricky
-//
+describe("list folder and friends", function() {
+  before("Create folder contents", function(done)
+  {
+    // We want to create the files in a specific order so they will come back sorted by mtime propertly.  However, on some
+    // file systems (MacOS), the granularity of the file mtime is one second.  So if we just create these files in order,
+    // all (or most) of them will have the same mtime, and thus be in an unpredictable sort order (files within the same mtime
+    // will be sorted by name, but we can't guarantee that all of the files will be in the same mtime).
+    //
+    // To get around this, we introduce a delay befween each operation to make sure that every file/dir is created in its own
+    // millisecond, this producing a predictable result order.
+    //
+    var intervalMs = 1050;
+    this.timeout(2000 + (intervalMs*5)); // This keeps Mocha from timing out the function in the default 2000ms.
+    async.series(
+    [
+      function(callback) 
+      {
+        request(server)
+          .post('/files/upload')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "one.txt" }')
+          .send('This is file one.txt')
+          .expect(200, callback);
+      },
+      function(callback)
+      {
+        setTimeout(callback, intervalMs);
+      },
+      function(callback) 
+      {
+        request(server)
+          .post('/files/upload')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "two.txt" }')
+          .send('This is file two.txt')
+          .expect(200, callback);
+      },
+      function(callback)
+      {
+        setTimeout(callback, intervalMs);
+      },
+      function(callback)
+      {
+        request(server)
+          .post('/files/create_folder')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "subfolder" }')
+          .expect(200, callback);
+      },
+      function(callback)
+      {
+        setTimeout(callback, intervalMs);
+      },
+      function(callback) 
+      {
+        log.info("three");
+        request(server)
+          .post('/files/upload')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "subfolder/three.txt" }')
+          .send('This is file three.txt')
+          .expect(200, callback);
+      },
+      function(callback)
+      {
+        setTimeout(callback, intervalMs);
+      },
+      function(callback) 
+      {
+        log.info("four");
+        request(server)
+          .post('/files/upload')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "subfolder/four.txt" }')
+          .send('This is file four.txt')
+          .expect(200, callback);
+      },
+      function(callback)
+      {
+        setTimeout(callback, intervalMs);
+      },
+      function(callback) 
+      {
+        log.info("five");
+        request(server)
+          .post('/files/upload')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "five.txt" }')
+          .send('This is file five.txt')
+          .expect(200, callback);
+      },
+    ],
+    function(err, results) 
+    {
+      if (err)
+      {
+        log.error(err);
+      }
+      done();
+    });
+  });
+
+  // Now we have:
+  //
+  //    /one.txt
+  //    /two.txt
+  //    /subfolder/three.txt
+  //    /subfolder/four.txt
+  //    /five.txt
+  //
+  // NOTE: We will be using the "limit" parameter below to set the page size for result sets.  This is not part
+  //       of the DropBox API (they use a hard-coded default of 725 results per request/page).  We introduced
+  //       the limit parameter specifically to make it easier to test the paging parts of these APIs.
+  //
+
+  it('non-recursive list_folder on root contains correct files', function(done) {
+    request(server)
+      .post('/files/list_folder')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .set('Dropbox-API-Arg', '{ "path": "" }')
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert(res.body.entries);
+          assert.equal(res.body.entries.length, 4);
+          log.info("Results:", res.body.entries);
+          assert.equal(res.body.entries[0].name, "one.txt"); 
+          assert.equal(res.body.entries[1].name, "two.txt"); 
+          assert.equal(res.body.entries[2].name, "subfolder"); 
+          assert.equal(res.body.entries[3].name, "five.txt"); 
+          assert.equal(res.body.has_more, false); 
+          assert(res.body.cursor);
+      })
+      .expect(200, done);
+  });
+
+  it('recursive list_folder on root contains correct files', function(done) {
+    request(server)
+      .post('/files/list_folder')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .set('Dropbox-API-Arg', '{ "path": "", "recursive": true }')
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert(res.body.entries);
+          assert.equal(res.body.entries.length, 6);
+          log.info("Results:", res.body.entries);
+          assert.equal(res.body.entries[0].name, "one.txt"); 
+          assert.equal(res.body.entries[1].name, "two.txt"); 
+          assert.equal(res.body.entries[2].name, "subfolder"); 
+          assert.equal(res.body.entries[3].name, "three.txt"); 
+          assert.equal(res.body.entries[4].name, "four.txt"); 
+          assert.equal(res.body.entries[5].name, "five.txt"); 
+          assert.equal(res.body.has_more, false); 
+          assert(res.body.cursor);
+      })
+      .expect(200, done);
+  });
+
+  var cursor;
+
+  it('recursive list_folder on root returns correct first page of results', function(done) {
+    request(server)
+      .post('/files/list_folder')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .set('Dropbox-API-Arg', '{ "path": "", "recursive": true, "limit": 3 }')
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert(res.body.entries);
+          assert.equal(res.body.entries.length, 3);
+          log.info("Results:", res.body.entries);
+          assert.equal(res.body.entries[0].name, "one.txt"); 
+          assert.equal(res.body.entries[1].name, "two.txt"); 
+          assert.equal(res.body.entries[2].name, "subfolder"); 
+          assert.equal(res.body.has_more, true); 
+          assert(res.body.cursor);
+          cursor = res.body.cursor;
+      })
+      .expect(200, done);
+  });
+
+  it('list_folder/continue on recursive list_folder on root returns correct second page of results', function(done) {
+    request(server)
+      .post('/files/list_folder/continue')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .set('Dropbox-API-Arg', '{ "cursor": "' + cursor + '" }')
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert(res.body.entries);
+          assert.equal(res.body.entries.length, 3);
+          log.info("Results:", res.body.entries);
+          assert.equal(res.body.entries[0].name, "three.txt"); 
+          assert.equal(res.body.entries[1].name, "four.txt"); 
+          assert.equal(res.body.entries[2].name, "five.txt"); 
+          assert.equal(res.body.has_more, false); 
+          assert(res.body.cursor);
+          cursor = res.body.cursor;
+      })
+      .expect(200, done);
+  });
+
+  it('list_folder/continue on cursor from end of results returns no results', function(done) {
+    request(server)
+      .post('/files/list_folder/continue')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .set('Dropbox-API-Arg', '{ "cursor": "' + cursor + '" }')
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert(res.body.entries);
+          assert.equal(res.body.entries.length, 0);
+          assert.equal(res.body.has_more, false); 
+          assert(res.body.cursor);
+      })
+      .expect(200, done);
+  });
+
+  it('list_folder/continue on cursor from end of results returns file added later', function(done) {
+    async.series(
+    [
+      function(callback) 
+      {
+        request(server)
+          .post('/files/upload')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "six.txt" }')
+          .send('This is file six.txt')
+          .expect(200, callback);
+      },
+      function(callback)
+      {
+        request(server)
+          .post('/files/list_folder/continue')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "cursor": "' + cursor + '" }')
+          .expect('Content-Type', /json/)
+          .expect(function(res){
+              assert(res.body);
+              assert(res.body.entries);
+              assert.equal(res.body.entries.length, 1);
+              assert.equal(res.body.entries[0].name, "six.txt"); 
+              assert.equal(res.body.has_more, false); 
+              assert(res.body.cursor);
+          })
+          .expect(200, callback);
+      },
+    ],
+    function(err, results) 
+    {
+      if (err)
+      {
+        log.error(err);
+      }
+      done();
+    });
+  });
+
+  it('list_folder/get_latest_cursor succeeds', function(done) {
+    request(server)
+      .post('/files/list_folder/get_latest_cursor')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .set('Dropbox-API-Arg', '{ "path": "", "recursive": true }')
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert(res.body.cursor);
+          cursor = res.body.cursor;
+      })
+      .expect(200, done);
+  });
+
+  it('list_folder/continue on get_latest_cursor returns no results', function(done) {
+    request(server)
+      .post('/files/list_folder/continue')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .set('Dropbox-API-Arg', '{ "cursor": "' + cursor + '" }')
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert(res.body.entries);
+          assert.equal(res.body.entries.length, 0);
+          assert.equal(res.body.has_more, false); 
+          assert(res.body.cursor);
+      })
+      .expect(200, done);
+  });
+
+  it('list_folder/continue returns file added after get_latest_cursor', function(done) {
+    async.series(
+    [
+      function(callback) 
+      {
+        request(server)
+          .post('/files/upload')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "seven.txt" }')
+          .send('This is file six.txt')
+          .expect(200, callback);
+      },
+      function(callback)
+      {
+        request(server)
+          .post('/files/list_folder/continue')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "cursor": "' + cursor + '" }')
+          .expect('Content-Type', /json/)
+          .expect(function(res){
+              assert(res.body);
+              assert(res.body.entries);
+              assert.equal(res.body.entries.length, 1);
+              assert.equal(res.body.entries[0].name, "six.txt"); 
+              assert.equal(res.body.has_more, false); 
+              assert(res.body.cursor);
+          })
+          .expect(200, callback);
+      },
+    ],
+    function(err, results) 
+    {
+      if (err)
+      {
+        log.error(err);
+      }
+      done();
+    });
+  });
+
+  //
+  // !!! Long poll - list_folder/get_latest_cursor, list_folder/longpoll - this one might be tricky to test
+  //
+
+  after("Clean up folder contents", function(done)
+  {
+    async.series(
+    [
+      function(callback) 
+      {
+        request(server)
+          .post('/files/delete')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "seven.txt" }')
+          .expect(200, callback);
+      },
+      function(callback) 
+      {
+        request(server)
+          .post('/files/delete')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "six.txt" }')
+          .expect(200, callback);
+      },
+      function(callback) 
+      {
+        request(server)
+          .post('/files/delete')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "five.txt" }')
+          .expect(200, callback);
+      },
+      function(callback) 
+      {
+        request(server)
+          .post('/files/delete')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "subfolder/four.txt" }')
+          .expect(200, callback);
+      },
+      function(callback) 
+      {
+        request(server)
+          .post('/files/delete')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "subfolder/three.txt" }')
+          .expect(200, callback);
+      },
+      function(callback) 
+      {
+        request(server)
+          .post('/files/delete')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "subfolder" }')
+          .expect(200, callback);
+      },
+      function(callback) 
+      {
+        request(server)
+          .post('/files/delete')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "two.txt" }')
+          .expect(200, callback);
+      },
+      function(callback) 
+      {
+        request(server)
+          .post('/files/delete')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "one.txt" }')
+          .expect(200, callback);
+      }
+    ],
+    function(err, results) 
+    {
+      if (err)
+      {
+        log.error(err);
+      }
+      done();
+    });
+  });
+});
 
 //
 // !!! Only if file driver (not implemented in Manta yet)
