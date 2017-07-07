@@ -361,6 +361,26 @@ module.exports = function(params)
                 callback(err, entry)
             });
         },
+        getObjectMetaData: function(user, filename, callback)
+        {
+            var filePath = toSafeLocalUserAppPath(user, filename);
+
+            try
+            {
+                callback(null, getEntryDetails(user, filePath, filename));
+            }
+            catch (err)
+            {
+                if (err.code == 'ENOENT')
+                {
+                    callback(null, null);
+                }
+                else
+                {
+                    callback(err);
+                }
+            }
+        },
         startMultipartUpload: function(user, callback)
         {
             // File name convention:

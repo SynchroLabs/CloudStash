@@ -178,6 +178,52 @@ describe('/files/create_folder of test_folder', function() {
   });
 });
 
+describe('/files/get_metadata', function() {
+  it('succeeds for existing folder', function(done) {
+    request(server)
+      .post('/files/get_metadata')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .set('Dropbox-API-Arg', '{ "path": "test_folder" }')
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert.equal(res.body[".tag"], 'folder'); 
+          assert.equal(res.body.name, 'test_folder'); 
+      })
+      .expect(200, done);
+  });
+  it('succeeds for existing file', function(done) {
+    request(server)
+      .post('/files/get_metadata')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .set('Dropbox-API-Arg', '{ "path": "foo.txt" }')
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert.equal(res.body[".tag"], 'file'); 
+          assert.equal(res.body.name, 'foo.txt'); 
+      })
+      .expect(200, done);
+  });
+  it('fails for non-existant object', function(done) {
+    request(server)
+      .post('/files/get_metadata')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .set('Dropbox-API-Arg', '{ "path": "flarf" }')
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert(res.body.error);
+          assert.equal(res.body.error[".tag"], 'path'); 
+          assert.equal(res.body.error.path[".tag"], 'not_found'); 
+      })
+      .expect(409, done);
+  });
+});
+
 describe('/files/copy foo.txt to test_folder/bar.txt', function() {
   it('succeeds in copying file', function(done) {
     request(server)

@@ -547,6 +547,58 @@ module.exports = function(params)
                 }
             });
         },
+        getObjectMetaData: function(user, filename, callback)
+        {
+            var filePath = toSafeLocalPath(user, filename);
+
+            var parentPath = path.dirname(filePath);
+            var filename = path.basename(filePath);
+
+            // In a perfect world we should be able to specify a limit of 1 and "client.ls" should return one item.  The 
+            // marker/limit logic in the Manta module "client.ls" method is kind of screwey in that it uses the passed-in
+            // limit as the per-request limit for its own internal paging, thus when you get exactly "limit" items,
+            // it considers that a full page and tries to fetch another page (it's actually worse than that, because
+            // there is a bug that causes this to happen even if you get one less than the amount requested).  If that
+            // method understood the difference between a passed-in limit and its internal paging limit, then we could
+            // just set "limit" below to 1 and that would be optimal (it would internally get exactly one item and return it).
+            //
+            // !!! TODO: Open a bug against Node Manta for the above.
+            //
+            var options = { marker: filename, limit: 3 };
+
+            var entry;
+
+            // We used to do a "client.info" on the object to get metadata, but the metadata returned doesn't
+            // match the metadata we get from "client.ls" (in particular, the mtime is not at ms granularity).
+            //
+            client.ls(parentPath, options, function(err, res)
+            {
+                if (err)
+                {
+                    callback(err);
+                }
+                else
+                {
+                    res.once('entry', function(item)
+                    {
+                        // The first entry is the one we want
+                        entry = getEntryDetails(user, item);
+                        log.info("Entry", entry);
+                    });
+
+                    res.once('error', function (err) 
+                    {
+                        log.error(err);
+                        callback(err);
+                    });
+
+                    res.once('end', function () 
+                    {
+                        callback(null, entry);
+                    });
+                }
+            });
+        },
         startMultipartUpload: function(user, callback)
         {
             // Multipart upload RFD - https://github.com/joyent/rfd/blob/master/rfd/0065/README.md
