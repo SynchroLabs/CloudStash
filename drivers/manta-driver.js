@@ -62,6 +62,8 @@ module.exports = function(params)
 
     log.debug("Using Manta store, basePath:", basePath);
 
+    var maxConcurrency = 4; // !!! Get this from config (with reasonable default)
+
     // key is "key" if provided, else from "keyStore" file.
     //
     if (params.key64)
@@ -201,8 +203,6 @@ module.exports = function(params)
         },
         listDirectory: function(user, dirPath, recursive, limit, cursor, callback)
         {
-            var maxConcurrency = 4;
-
             var entries = [];
 
             var q = async.queue(function(task, done) 
@@ -238,7 +238,7 @@ module.exports = function(params)
                         res.on('entry', function(item)
                         {
                             var entry = getEntryDetails(user, item);
-                            log.info("Entry", entry);
+                            log.debug("Entry", entry);
 
                             // If there is a cursor, only process entries greater than the cursor
                             //
@@ -307,8 +307,6 @@ module.exports = function(params)
         },
         getLatestCursorItem: function(user, dirPath, recursive, callback)
         {
-            var maxConcurrency = 4;
-
             var latestEntry;
 
             var q = async.queue(function(task, done) 
@@ -341,7 +339,7 @@ module.exports = function(params)
                         res.on('entry', function(item)
                         {
                             var entry = getEntryDetails(user, item);
-                            log.info("Entry", entry);
+                            log.debug("Entry", entry);
 
                             if (!latestEntry)
                             {
@@ -391,6 +389,104 @@ module.exports = function(params)
 
             q.push({ dirpath: dirPath });
         },
+        findItems: function(user, dirPath, isMatch, start, limit, callback)
+        {
+            var entries = [];
+
+            var q = async.queue(function(task, done) 
+            {
+                var fullPath = toSafeLocalPath(user, task.dirpath);
+
+                // !!! See comment in listDirecory (above) re paging results.
+                //
+                var options = {};
+
+                client.ls(fullPath, options, function(err, res)
+                {
+                    if (err)
+                    {
+                        if ((err.code == 'NOTFOUND') && (dirPath == ''))
+                        {
+                            // If the error is 'not found' and the dir in question is the root dir, we're just
+                            // going to ignore that and return an empty dir lising (just means we haven't created
+                            // this user/app path yet because it hasn't been used yet).
+                            //
+                            done();
+                        }
+                        else
+                        {
+                            done(err);
+                        }
+                    }
+                    else
+                    {
+                        res.on('entry', function(item)
+                        {
+                            var entry = getEntryDetails(user, item);
+                            log.debug("Find items evaluating entry", entry);
+
+                            if (isMatch(entry))
+                            {
+                                // This will insert into "entries" such that "entries" will be/stay in sorted order
+                                //
+                                entries.splice(lodash.sortedIndexBy(entries, entry, function(o){ return getEntrySortKey(o); }), 0, entry);
+
+                                // This will keep the list from growing beyond more than one over the limit (we purposely
+                                // leave the "extra" entry so that at the end we will be able to see that we went past
+                                // the limit).
+                                //
+                                if (entries.length > (start + limit + 1))
+                                {
+                                    entries.splice(start + limit + 1);
+                                }
+                            }
+
+                            if (entry[".tag"] == "folder")
+                            {
+                                q.push({ dirpath: path.posix.join(task.dirpath, entry.name) });
+                            }
+                        });
+
+                        res.once('error', function (err) 
+                        {
+                            log.error(err);
+                            done(err);
+                        });
+
+                        res.once('end', function () 
+                        {
+                            done();
+                        });
+                    }
+                });
+            }, maxConcurrency);
+
+            q.error = function(err, task)
+            {
+                q.kill();
+                callback(err);
+            };
+
+            q.drain = function() 
+            {
+                var hasMore = false;
+
+                if (entries.length > (start + limit))
+                {
+                    entries.splice(start + limit);
+                    hasMore = true;
+                }
+
+                if (start)
+                {
+                    entries.splice(0, start);
+                }
+
+                callback(null, entries, hasMore, start + entries.length);
+            };
+
+            q.push({ dirpath: dirPath });
+        },        
         getObject: function(user, filename, callback)
         {
             var filePath = toSafeLocalPath(user, filename);
