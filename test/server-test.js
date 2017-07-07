@@ -73,7 +73,7 @@ describe('files/list_folder on empty root folder', function() {
       .post('/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "" }')
+      .send({ path: "" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -105,7 +105,7 @@ describe('files/upload of foo.txt to root', function() {
       .post('/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "" }')
+      .send({ path: "" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -139,7 +139,7 @@ describe('/files/create_folder of test_folder', function() {
       .post('/files/create_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "test_folder" }')
+      .send({ path: "test_folder" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -153,7 +153,7 @@ describe('/files/create_folder of test_folder', function() {
       .post('/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "" }')
+      .send({ path: "" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -167,7 +167,7 @@ describe('/files/create_folder of test_folder', function() {
       .post('/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "test_folder" }')
+      .send({ path: "test_folder" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -184,7 +184,7 @@ describe('/files/get_metadata', function() {
       .post('/files/get_metadata')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "test_folder" }')
+      .send({ path: "test_folder" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -198,7 +198,7 @@ describe('/files/get_metadata', function() {
       .post('/files/get_metadata')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "foo.txt" }')
+      .send({ path: "foo.txt" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -212,7 +212,7 @@ describe('/files/get_metadata', function() {
       .post('/files/get_metadata')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "flarf" }')
+      .send({ path: "flarf" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -230,7 +230,7 @@ describe('/files/copy foo.txt to test_folder/bar.txt', function() {
       .post('/files/copy')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "from_path": "foo.txt", "to_path": "test_folder/bar.txt" }')
+      .send({ from_path: "foo.txt", to_path: "test_folder/bar.txt" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -244,7 +244,7 @@ describe('/files/copy foo.txt to test_folder/bar.txt', function() {
       .post('/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "test_folder" }')
+      .send({ path: "test_folder" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -275,7 +275,7 @@ describe('/files/copy foo.txt to existing test_folder/bar.txt', function() {
       .post('/files/copy')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "from_path": "foo.txt", "to_path": "test_folder/bar.txt" }')
+      .send({ from_path: "foo.txt", to_path: "test_folder/bar.txt" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -292,7 +292,7 @@ describe('/files/delete of foo.txt', function() {
       .post('/files/delete')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "foo.txt" }')
+      .send({ path: "foo.txt" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -306,7 +306,7 @@ describe('/files/delete of foo.txt', function() {
       .post('/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "" }')
+      .send({ path: "" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -325,7 +325,7 @@ describe('/files/move of test_folder/bar.txt to baz.txt', function() {
       .post('/files/move')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "from_path": "test_folder/bar.txt", "to_path": "baz.txt" }')
+      .send({ from_path: "test_folder/bar.txt", to_path: "baz.txt" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -339,7 +339,7 @@ describe('/files/move of test_folder/bar.txt to baz.txt', function() {
       .post('/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "" }')
+      .send({ path: "" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -353,7 +353,7 @@ describe('/files/move of test_folder/bar.txt to baz.txt', function() {
       .post('/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "test_folder" }')
+      .send({ path: "test_folder" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -382,7 +382,7 @@ describe('/files/delete of test_folder', function() {
       .post('/files/delete')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "test_folder" }')
+      .send({ path: "test_folder" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -396,7 +396,7 @@ describe('/files/delete of test_folder', function() {
       .post('/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "" }')
+      .send({ path: "" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -415,7 +415,7 @@ describe('/files/delete of baz.txt (last remaining file)', function() {
       .post('/files/delete')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "baz.txt" }')
+      .send({ path: "baz.txt" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -429,7 +429,7 @@ describe('/files/delete of baz.txt (last remaining file)', function() {
       .post('/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "" }')
+      .send({ path: "" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -489,7 +489,7 @@ describe("list folder and friends", function() {
           .post('/files/create_folder')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
-          .send('{ "path": "subfolder" }')
+          .send({ path: "subfolder" })
           .expect(200, callback);
       },
       function(callback)
@@ -566,7 +566,7 @@ describe("list folder and friends", function() {
       .post('/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "" }')
+      .send({ path: "" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -588,7 +588,7 @@ describe("list folder and friends", function() {
       .post('/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "", "recursive": true }')
+      .send({ path: "", recursive: true })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -614,7 +614,7 @@ describe("list folder and friends", function() {
       .post('/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "", "recursive": true, "limit": 3 }')
+      .send({ path: "", recursive: true, limit: 3 })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -636,7 +636,7 @@ describe("list folder and friends", function() {
       .post('/files/list_folder/continue')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "cursor": "' + cursor + '" }')
+      .send({ cursor: cursor })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -658,7 +658,7 @@ describe("list folder and friends", function() {
       .post('/files/list_folder/continue')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "cursor": "' + cursor + '" }')
+      .send({ cursor: cursor })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -689,7 +689,7 @@ describe("list folder and friends", function() {
           .post('/files/list_folder/continue')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
-          .send('{ "cursor": "' + cursor + '" }')
+          .send({ cursor: cursor })
           .expect('Content-Type', /json/)
           .expect(function(res){
               assert(res.body);
@@ -717,7 +717,7 @@ describe("list folder and friends", function() {
       .post('/files/list_folder/get_latest_cursor')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "", "recursive": true }')
+      .send({ path: "", recursive: true })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -732,7 +732,7 @@ describe("list folder and friends", function() {
       .post('/files/list_folder/continue')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "cursor": "' + cursor + '" }')
+      .send({ cursor: cursor })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -763,7 +763,7 @@ describe("list folder and friends", function() {
           .post('/files/list_folder/continue')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
-          .send('{ "cursor": "' + cursor + '" }')
+          .send({ cursor: cursor })
           .expect('Content-Type', /json/)
           .expect(function(res){
               assert(res.body);
@@ -800,7 +800,7 @@ describe("list folder and friends", function() {
           .post('/files/delete')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
-          .send('{ "path": "seven.txt" }')
+          .send({ path: "seven.txt" })
           .expect(200, callback);
       },
       function(callback) 
@@ -809,7 +809,7 @@ describe("list folder and friends", function() {
           .post('/files/delete')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
-          .send('{ "path": "six.txt" }')
+          .send({ path: "six.txt" })
           .expect(200, callback);
       },
       function(callback) 
@@ -818,7 +818,7 @@ describe("list folder and friends", function() {
           .post('/files/delete')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
-          .send('{ "path": "five.txt" }')
+          .send({ path: "five.txt" })
           .expect(200, callback);
       },
       function(callback) 
@@ -827,7 +827,7 @@ describe("list folder and friends", function() {
           .post('/files/delete')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
-          .send('{ "path": "subfolder/four.txt" }')
+          .send({ path: "subfolder/four.txt" })
           .expect(200, callback);
       },
       function(callback) 
@@ -836,7 +836,7 @@ describe("list folder and friends", function() {
           .post('/files/delete')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
-          .send('{ "path": "subfolder/three.txt" }')
+          .send({ path: "subfolder/three.txt" })
           .expect(200, callback);
       },
       function(callback) 
@@ -845,7 +845,7 @@ describe("list folder and friends", function() {
           .post('/files/delete')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
-          .send('{ "path": "subfolder" }')
+          .send({ path: "subfolder" })
           .expect(200, callback);
       },
       function(callback) 
@@ -854,7 +854,7 @@ describe("list folder and friends", function() {
           .post('/files/delete')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
-          .send('{ "path": "two.txt" }')
+          .send({ path: "two.txt" })
           .expect(200, callback);
       },
       function(callback) 
@@ -863,7 +863,7 @@ describe("list folder and friends", function() {
           .post('/files/delete')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
-          .send('{ "path": "one.txt" }')
+          .send({ path: "one.txt" })
           .expect(200, callback);
       }
     ],
@@ -951,7 +951,7 @@ describe('Multipart upload', function() {
       .post('/files/delete')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send('{ "path": "target.txt" }')
+      .send({ path: "target.txt" })
       .expect(200, done);
   });
 });
