@@ -21,14 +21,14 @@ module.exports = function(params)
 
     var maxConcurrency = 4; // !!! Get this from config (with reasonable default)
 
-    function getEntryDetails(user, fullpath, filename)
+    function getEntryDetails(user, fullpath)
     {
         var fStat = fs.statSync(fullpath);
         var displayPath = "/" + path.relative(path.posix.join(basePath, user.account_id, user.app_id), fullpath);
 
         var item = { };
         item[".tag"] = fStat.isFile() ? "file" : "folder";
-        item["name"] = filename;
+        item["name"] = path.basename(displayPath);
         item["path_lower"] = displayPath.toLowerCase();
         item["path_display"] = displayPath;
         // item["id"]
@@ -112,7 +112,7 @@ module.exports = function(params)
                 }
                 else
                 {
-                    var entry = getEntryDetails(user, fullPath, dirPath);
+                    var entry = getEntryDetails(user, fullPath);
                     callback(err, entry);
                 }
             });
@@ -120,6 +120,8 @@ module.exports = function(params)
         listDirectory: function(user, dirPath, recursive, limit, cursor, callback)
         {
             var entries = [];
+
+            limit = limit || 999999;
 
             var q = async.queue(function(task, done) 
             {
@@ -141,7 +143,7 @@ module.exports = function(params)
                         {
                             files.forEach(function(file)
                             {
-                                var entry = getEntryDetails(user, path.posix.join(fullPath, file), file);
+                                var entry = getEntryDetails(user, path.posix.join(fullPath, file));
                                 log.debug("Entry", entry);
 
                                 // If there is a cursor, only process entries greater than the cursor
@@ -201,6 +203,66 @@ module.exports = function(params)
 
             q.push({ dirpath: dirPath });
         },
+        traverseDirectory: function(user, dirPath, onEntry, callback)
+        {
+            var stopped = false;
+
+            var q = async.queue(function(task, done) 
+            {
+                var fullPath = toSafeLocalUserAppPath(user, task.dirpath);
+
+                fs.readdir(fullPath, function(err, files) 
+                {
+                    // If the error is 'not found' and the dir in question is the root dir, we're just
+                    // going to ignore that and return an empty dir lising (just means we haven't created
+                    // this user/app path yet because it hasn't been used yet).
+                    //
+                    if (err && ((err.code !== 'ENOENT') || (task.dirpath !== '')))
+                    {
+                        done(err);
+                    }
+                    else
+                    {
+                        if (files)
+                        {
+                            files.forEach(function(file)
+                            {
+                                var entry = getEntryDetails(user, path.posix.join(fullPath, file));
+                                log.debug("Entry", entry);
+
+                                if (onEntry(entry))
+                                {
+                                    stopped = true;
+                                    done();
+                                }
+                                else if (entry[".tag"] == "folder")
+                                {
+                                    q.push({ dirpath: path.posix.join(task.dirpath, entry.name) });
+                                }
+                            });
+                        }
+
+                        if (!stopped)
+                        {
+                            done();
+                        }
+                    }
+                });
+            }, maxConcurrency);
+
+            q.error = function(err, task)
+            {
+                q.kill();
+                callback(err);
+            };
+
+            q.drain = function() 
+            {
+                callback(null, stopped);
+            };
+
+            q.push({ dirpath: dirPath });
+        },
         getLatestCursorItem: function(user, dirPath, recursive, callback)
         {
             var latestEntry;
@@ -225,7 +287,7 @@ module.exports = function(params)
                         {
                             files.forEach(function(file)
                             {
-                                var entry = getEntryDetails(user, path.posix.join(fullPath, file), file);
+                                var entry = getEntryDetails(user, path.posix.join(fullPath, file));
                                 log.debug("Entry", entry);
 
                                 if (!latestEntry)
@@ -292,7 +354,7 @@ module.exports = function(params)
                         {
                             files.forEach(function(file)
                             {
-                                var entry = getEntryDetails(user, path.posix.join(fullPath, file), file);
+                                var entry = getEntryDetails(user, path.posix.join(fullPath, file));
                                 log.debug("Find items evaluating entry", entry);
 
                                 if (isMatch(entry))
@@ -408,7 +470,7 @@ module.exports = function(params)
                 }
                 else
                 {
-                    callback(err, getEntryDetails(user, newFilePath, newFilename));
+                    callback(err, getEntryDetails(user, newFilePath));
                 }
             });
         },
@@ -425,7 +487,7 @@ module.exports = function(params)
                 }
                 else
                 {
-                    callback(err, getEntryDetails(user, newFilePath, newFilename));
+                    callback(err, getEntryDetails(user, newFilePath));
                 }
             });
         },
@@ -435,7 +497,7 @@ module.exports = function(params)
             //
             var filePath = toSafeLocalUserAppPath(user, filename);
 
-            var entry = getEntryDetails(user, filePath, filename);
+            var entry = getEntryDetails(user, filePath);
 
             fs.remove(filePath, function(err)
             {
@@ -444,11 +506,12 @@ module.exports = function(params)
         },
         getObjectMetaData: function(user, filename, callback)
         {
+            log.info("getObjectMetaData for path:", filename);
             var filePath = toSafeLocalUserAppPath(user, filename);
 
             try
             {
-                callback(null, getEntryDetails(user, filePath, filename));
+                callback(null, getEntryDetails(user, filePath));
             }
             catch (err)
             {
@@ -516,7 +579,7 @@ module.exports = function(params)
                     //
                     files.forEach(function(file)
                     {
-                        var entry = getEntryDetails(user, path.posix.join(uploadDirPath, file), file);
+                        var entry = getEntryDetails(user, path.posix.join(uploadDirPath, file));
                         entry.offset = parseInt(path.parse(entry.name).name);
                         entries.push(entry);
                     });
@@ -566,7 +629,7 @@ module.exports = function(params)
 
                                 // Return details about newly created file
                                 //
-                                callback(null, getEntryDetails(user, filePath, filename));
+                                callback(null, getEntryDetails(user, filePath));
                             });
                         });
                     });

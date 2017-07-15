@@ -205,12 +205,14 @@ module.exports = function(params)
         {
             var entries = [];
 
+            limit = limit || 999999;
+
             var q = async.queue(function(task, done) 
             {
                 var fullPath = toSafeLocalPath(user, task.dirpath);
 
                 // !!! It appears from the source code that client.ls will make multiple underlying REST API
-                //     calls and page through the entries without us havint to do anything special.
+                //     calls and page through the entries without us having to do anything special.
                 //
                 //         https://github.com/joyent/node-manta/blob/master/lib/client.js
                 //
@@ -542,8 +544,6 @@ module.exports = function(params)
                 }
                 else
                 {
-                    // !!! Note: Only copies single file (as opposed to folder), doesn't deal with name conflict / rename
-                    //
                     client.ln(filePath, newFilePath, function(err) 
                     {
                         if (err)
@@ -554,7 +554,6 @@ module.exports = function(params)
                         {
                             // !!! Better entry details?  
                             //
-                            //        Query source obj before copy?
                             //        Get info on new obj after copy (may have to wait for it to show up)?
                             //
                             var entry = { type: "object", name: newFilename };
@@ -577,8 +576,6 @@ module.exports = function(params)
                 }
                 else
                 {
-                    // !!! Note: Only moves single file (as opposed to folder), doesn't deal with name conflict / rename
-                    //
                     client.ln(filePath, newFilePath, function(err) 
                     {
                         if (err)

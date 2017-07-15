@@ -90,7 +90,7 @@ describe('files/upload of foo.txt to root', function() {
       .post('/files/upload')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .set('Dropbox-API-Arg', '{ "path": "foo.txt" }')
+      .set('Dropbox-API-Arg', '{ "path": "/foo.txt" }')
       .send('Foo is the word')
       .expect('Content-Type', /json/)
       .expect(function(res){
@@ -139,7 +139,7 @@ describe('/files/create_folder of test_folder', function() {
       .post('/files/create_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send({ path: "test_folder" })
+      .send({ path: "/test_folder" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -167,7 +167,7 @@ describe('/files/create_folder of test_folder', function() {
       .post('/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send({ path: "test_folder" })
+      .send({ path: "/test_folder" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -184,7 +184,7 @@ describe('/files/get_metadata', function() {
       .post('/files/get_metadata')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send({ path: "test_folder" })
+      .send({ path: "/test_folder" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -198,7 +198,7 @@ describe('/files/get_metadata', function() {
       .post('/files/get_metadata')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send({ path: "foo.txt" })
+      .send({ path: "/foo.txt" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -212,11 +212,12 @@ describe('/files/get_metadata', function() {
       .post('/files/get_metadata')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send({ path: "flarf" })
+      .send({ path: "/flarf" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
           assert(res.body.error);
+          assert.equal(res.body.error_summary, 'path/not_found'); 
           assert.equal(res.body.error[".tag"], 'path'); 
           assert.equal(res.body.error.path[".tag"], 'not_found'); 
       })
@@ -230,12 +231,13 @@ describe('/files/copy foo.txt to test_folder/bar.txt', function() {
       .post('/files/copy')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send({ from_path: "foo.txt", to_path: "test_folder/bar.txt" })
+      .send({ from_path: "/foo.txt", to_path: "/test_folder/bar.txt" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
           assert.equal(res.body[".tag"], 'file'); 
-          assert.equal(res.body.name, 'test_folder/bar.txt'); 
+          assert.equal(res.body.name, 'bar.txt'); 
+          assert.equal(res.body.path_display, '/test_folder/bar.txt'); 
       })
       .expect(200, done);
   });
@@ -244,7 +246,7 @@ describe('/files/copy foo.txt to test_folder/bar.txt', function() {
       .post('/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send({ path: "test_folder" })
+      .send({ path: "/test_folder" })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
@@ -252,6 +254,7 @@ describe('/files/copy foo.txt to test_folder/bar.txt', function() {
           assert.equal(res.body.entries.length, 1); 
           assert.equal(res.body.entries[0][".tag"], 'file'); 
           assert.equal(res.body.entries[0].name, 'bar.txt'); 
+          assert.equal(res.body.entries[0].path_display, '/test_folder/bar.txt'); 
       })
       .expect(200, done);
   });
@@ -260,7 +263,7 @@ describe('/files/copy foo.txt to test_folder/bar.txt', function() {
       .post('/files/download')
       .set('Accept', 'application/octet-stream')
       .set('Authorization', "Bearer " + testToken)
-      .set('Dropbox-API-Arg', '{ "path": "test_folder/bar.txt" }')
+      .set('Dropbox-API-Arg', '{ "path": "/test_folder/bar.txt" }')
       .expect('Content-Type', 'application/octet-stream')
       .expect(function(res){
            assert.equal(res.body.toString(), 'Foo is the word'); 
@@ -270,18 +273,60 @@ describe('/files/copy foo.txt to test_folder/bar.txt', function() {
 });
 
 describe('/files/copy foo.txt to existing test_folder/bar.txt', function() {
-  it('succeeds in copying file over existing', function(done) {
+  it('fails in copying file over existing', function(done) {
     request(server)
       .post('/files/copy')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
-      .send({ from_path: "foo.txt", to_path: "test_folder/bar.txt" })
+      .send({ from_path: "/foo.txt", to_path: "/test_folder/bar.txt" })
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert(res.body.error);
+          assert.equal(res.body.error_summary, 'to/conflict'); 
+          assert.equal(res.body.error[".tag"], 'to'); 
+          assert.equal(res.body.error.to[".tag"], 'conflict'); 
+      })
+      .expect(409, done);
+  });
+  it('succeeds in copying file over existing with overwrite', function(done) {
+    request(server)
+      .post('/files/copy')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .send({ from_path: "/foo.txt", to_path: "/test_folder/bar.txt", overwrite: true })
       .expect('Content-Type', /json/)
       .expect(function(res){
           assert(res.body);
           assert.equal(res.body[".tag"], 'file'); 
-          assert.equal(res.body.name, 'test_folder/bar.txt'); 
+          assert.equal(res.body.name, 'bar.txt'); 
+          assert.equal(res.body.path_display, '/test_folder/bar.txt'); 
       })
+      .expect(200, done);
+  });
+  it('succeeds in copying file over existing with rename', function(done) {
+    request(server)
+      .post('/files/copy')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .send({ from_path: "/foo.txt", to_path: "/test_folder/bar.txt", autorename: true })
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert.equal(res.body[".tag"], 'file'); 
+          assert.equal(res.body.name, 'bar (1).txt'); 
+          assert.equal(res.body.path_display, '/test_folder/bar (1).txt'); 
+      })
+      .expect(200, done);
+  });
+  after("Clean up folder contents", function(done)
+  {
+    request(server)
+      .post('/files/delete')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .send({ path: "test_folder/bar (1).txt" })
+      .expect('Content-Type', /json/)
       .expect(200, done);
   });
 });
@@ -453,98 +498,44 @@ describe("list folder and friends", function() {
     //
     var intervalMs = 1050;
     this.timeout(2000 + (intervalMs*5)); // This keeps Mocha from timing out the function in the default 2000ms.
-    async.series(
+
+    var files =
     [
-      function(callback) 
-      {
-        request(server)
-          .post('/files/upload')
-          .set('Accept', 'application/json')
-          .set('Authorization', "Bearer " + testToken)
-          .set('Dropbox-API-Arg', '{ "path": "one.txt" }')
-          .send('This is file one.txt')
-          .expect(200, callback);
-      },
-      function(callback)
-      {
-        setTimeout(callback, intervalMs);
-      },
-      function(callback) 
-      {
-        request(server)
-          .post('/files/upload')
-          .set('Accept', 'application/json')
-          .set('Authorization', "Bearer " + testToken)
-          .set('Dropbox-API-Arg', '{ "path": "two.txt" }')
-          .send('This is file two.txt')
-          .expect(200, callback);
-      },
-      function(callback)
-      {
-        setTimeout(callback, intervalMs);
-      },
-      function(callback)
-      {
-        request(server)
-          .post('/files/create_folder')
-          .set('Accept', 'application/json')
-          .set('Authorization', "Bearer " + testToken)
-          .send({ path: "subfolder" })
-          .expect(200, callback);
-      },
-      function(callback)
-      {
-        setTimeout(callback, intervalMs);
-      },
-      function(callback) 
-      {
-        log.info("three");
-        request(server)
-          .post('/files/upload')
-          .set('Accept', 'application/json')
-          .set('Authorization', "Bearer " + testToken)
-          .set('Dropbox-API-Arg', '{ "path": "subfolder/three.txt" }')
-          .send('This is file three.txt')
-          .expect(200, callback);
-      },
-      function(callback)
-      {
-        setTimeout(callback, intervalMs);
-      },
-      function(callback) 
-      {
-        log.info("four");
-        request(server)
-          .post('/files/upload')
-          .set('Accept', 'application/json')
-          .set('Authorization', "Bearer " + testToken)
-          .set('Dropbox-API-Arg', '{ "path": "subfolder/four.txt" }')
-          .send('This is file four.txt')
-          .expect(200, callback);
-      },
-      function(callback)
-      {
-        setTimeout(callback, intervalMs);
-      },
-      function(callback) 
-      {
-        log.info("five");
-        request(server)
-          .post('/files/upload')
-          .set('Accept', 'application/json')
-          .set('Authorization', "Bearer " + testToken)
-          .set('Dropbox-API-Arg', '{ "path": "five.txt" }')
-          .send('This is file five.txt')
-          .expect(200, callback);
-      },
-    ],
-    function(err, results) 
+      { name: "/one.txt", contents: "This is file one.txt" },
+      { name: "/two.txt", contents: "This is file two.txt" },
+      { name: "/subfolder/three.txt", contents: "This is file three.txt" },
+      { name: "/subfolder/four.txt", contents: "This is file four.txt" },
+      { name: "/five.txt", contents: "This is file five.txt" }
+    ]
+
+    async.eachSeries(files, function(file, callback)
     {
-      if (err)
-      {
-        log.error(err);
-      }
-      done();
+        log.info("Processing file:", file.name);
+        request(server)
+          .post('/files/upload')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "' + file.name + '" }')
+          .send(file.contents)
+          .expect(200, function(err)
+          {
+              if (err)
+              {
+                  callback(err);
+              }
+              else
+              {
+                  setTimeout(callback, intervalMs);
+              }
+          });
+    },
+    function(err)
+    {
+        if (err)
+        {
+            log.error(err);
+        }
+        done(err);
     });
   });
 
@@ -792,88 +783,32 @@ describe("list folder and friends", function() {
 
   after("Clean up folder contents", function(done)
   {
-    async.series(
+    var files = 
     [
-      function(callback) 
-      {
-        request(server)
-          .post('/files/delete')
-          .set('Accept', 'application/json')
-          .set('Authorization', "Bearer " + testToken)
-          .send({ path: "seven.txt" })
-          .expect(200, callback);
-      },
-      function(callback) 
-      {
-        request(server)
-          .post('/files/delete')
-          .set('Accept', 'application/json')
-          .set('Authorization', "Bearer " + testToken)
-          .send({ path: "six.txt" })
-          .expect(200, callback);
-      },
-      function(callback) 
-      {
-        request(server)
-          .post('/files/delete')
-          .set('Accept', 'application/json')
-          .set('Authorization', "Bearer " + testToken)
-          .send({ path: "five.txt" })
-          .expect(200, callback);
-      },
-      function(callback) 
-      {
-        request(server)
-          .post('/files/delete')
-          .set('Accept', 'application/json')
-          .set('Authorization', "Bearer " + testToken)
-          .send({ path: "subfolder/four.txt" })
-          .expect(200, callback);
-      },
-      function(callback) 
-      {
-        request(server)
-          .post('/files/delete')
-          .set('Accept', 'application/json')
-          .set('Authorization', "Bearer " + testToken)
-          .send({ path: "subfolder/three.txt" })
-          .expect(200, callback);
-      },
-      function(callback) 
-      {
-        request(server)
-          .post('/files/delete')
-          .set('Accept', 'application/json')
-          .set('Authorization', "Bearer " + testToken)
-          .send({ path: "subfolder" })
-          .expect(200, callback);
-      },
-      function(callback) 
-      {
-        request(server)
-          .post('/files/delete')
-          .set('Accept', 'application/json')
-          .set('Authorization', "Bearer " + testToken)
-          .send({ path: "two.txt" })
-          .expect(200, callback);
-      },
-      function(callback) 
-      {
-        request(server)
-          .post('/files/delete')
-          .set('Accept', 'application/json')
-          .set('Authorization', "Bearer " + testToken)
-          .send({ path: "one.txt" })
-          .expect(200, callback);
-      }
-    ],
-    function(err, results) 
+        "seven.txt",
+        "six.txt",
+        "five.txt",
+        "subfolder", // Will automatically delete contained four.txt and three.txt
+        "two.txt",
+        "one.txt"
+    ]
+
+    async.eachSeries(files, function(file, callback)
     {
-      if (err)
-      {
-        log.error(err);
-      }
-      done();
+        request(server)
+          .post('/files/delete')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ path: file })
+          .expect(200, callback);
+    },
+    function(err)
+    {
+        if (err)
+        {
+            log.error(err);
+        }
+        done();
     });
   });
 });
