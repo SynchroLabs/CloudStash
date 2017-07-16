@@ -56,13 +56,13 @@ var lodash = require('lodash');
 
 var manta = require('manta');
 
-module.exports = function(params)
+module.exports = function(params, config)
 {
     var basePath = params.basePath;
 
     log.debug("Using Manta store, basePath:", basePath);
 
-    var maxConcurrency = 4; // !!! Get this from config (with reasonable default)
+    var maxConcurrency = config.get('MAX_CONCURRENCY');
 
     // key is "key" if provided, else from "keyStore" file.
     //

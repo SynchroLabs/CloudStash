@@ -13,13 +13,13 @@ var uuidv4 = require('uuid/v4');
 
 var log = require('./../lib/logger').getLogger("file-driver");
 
-module.exports = function(params)
+module.exports = function(params, config)
 {
     var basePath = params.basePath;
 
     log.info("Using file store, basePath:", basePath);
 
-    var maxConcurrency = 4; // !!! Get this from config (with reasonable default)
+    var maxConcurrency = config.get('MAX_CONCURRENCY');
 
     function getEntryDetails(user, fullpath)
     {
