@@ -813,6 +813,241 @@ describe("list folder and friends", function() {
   });
 });
 
+describe('Folder operations', function(done) {
+
+  var files =
+  [
+    { file: "/one.txt", contents: "This is file one.txt" },
+    { file: "/two.txt", contents: "This is file two.txt" },
+    { file: "/subfolder/three.txt", contents: "This is file three.txt" },
+    { file: "/subfolder/four.txt", contents: "This is file four.txt" },
+    { folder: "/empty" },
+    { file: "/five.txt", contents: "This is file five.txt" }
+  ]
+
+  before("Create folder contents (testfolder)", function(done)
+  {
+    async.eachSeries(files, function(entry, callback)
+    {
+      if (entry.file)
+      {
+        request(server)
+          .post('/files/upload')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "/testfolder' + entry.file + '" }')
+          .send(entry.contents)
+          .expect(200, callback);
+      }
+      else
+      {
+        request(server)
+          .post('/files/create_folder')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ 'path': '/testfolder' + entry.folder })
+          .expect(200, callback);
+      }
+    },
+    function(err)
+    {
+        log.error("Err:", err);
+        done(err);
+    });
+  });
+
+  it('succeeds in moving folder tree', function(done) {
+    request(server)
+      .post('/files/move')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .send({ from_path: "/testfolder", to_path: "/testfolder1" })
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert.equal(res.body[".tag"], 'folder');
+          assert.equal(res.body.name, 'testfolder1'); 
+      })
+      .expect(200, done);
+  });
+
+  it('moved folder tree contents are correct', function(done) {
+    async.eachSeries(files, function(entry, callback)
+    {
+      if (entry.file)
+      {
+        request(server)
+          .post('/files/download')
+          .set('Accept', 'application/octet-stream')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ "path": "/testfolder1/" + entry.file })
+          .set('Dropbox-API-Arg', '{ "path": "/testfolder1' + entry.file + '" }')
+          .expect('Content-Type', 'application/octet-stream')
+          .expect(function(res){
+               assert.equal(res.body.toString(), entry.contents); 
+          })
+          .expect(200, callback);
+      }
+      else
+      {
+        request(server)
+          .post('/files/get_metadata')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ 'path': '/testfolder1' + entry.folder })
+          .expect(function(res){
+              assert(res.body);
+              assert.equal(res.body[".tag"], "folder");
+              assert.equal(res.body["path_display"], "/testfolder1" + entry.folder);
+          })
+          .expect(200, callback);
+      }
+    },
+    function(err)
+    {
+        log.error("Err:", err);
+        done(err);
+    });
+  });
+
+  it('move source folder no longer present after move', function(done) {
+    request(server)
+      .post('/files/get_metadata')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .send({ path: "/testfolder" })
+      .expect(function(res){
+          assert(res.body);
+          assert.equal(res.body.error_summary, 'path/not_found');
+      })
+      .expect(409, done);
+  });
+
+  it('succeeds in copying folder tree', function(done) {
+    request(server)
+      .post('/files/copy')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .send({ from_path: "/testfolder1", to_path: "/testfolder2" })
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert.equal(res.body[".tag"], 'folder');
+          assert.equal(res.body.name, 'testfolder2'); 
+      })
+      .expect(200, done);
+  });
+
+  it('copied folder tree contents are correct', function(done) {
+    async.eachSeries(files, function(entry, callback)
+    {
+      if (entry.file)
+      {
+        request(server)
+          .post('/files/download')
+          .set('Accept', 'application/octet-stream')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ "path": "/testfolder2/" + entry.file })
+          .set('Dropbox-API-Arg', '{ "path": "/testfolder2' + entry.file + '" }')
+          .expect('Content-Type', 'application/octet-stream')
+          .expect(function(res){
+               assert.equal(res.body.toString(), entry.contents); 
+          })
+          .expect(200, callback);
+      }
+      else
+      {
+        request(server)
+          .post('/files/get_metadata')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ 'path': '/testfolder2' + entry.folder })
+          .expect(function(res){
+              assert(res.body);
+              assert.equal(res.body[".tag"], "folder");
+              assert.equal(res.body["path_display"], "/testfolder2" + entry.folder);
+          })
+          .expect(200, callback);
+      }
+    },
+    function(err)
+    {
+        log.error("Err:", err);
+        done(err);
+    });
+  });
+
+  it('source of copied folder tree contents unchanged', function(done) {
+    async.eachSeries(files, function(entry, callback)
+    {
+      if (entry.file)
+      {
+        request(server)
+          .post('/files/download')
+          .set('Accept', 'application/octet-stream')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ "path": "/testfolder1/" + entry.file })
+          .set('Dropbox-API-Arg', '{ "path": "/testfolder1' + entry.file + '" }')
+          .expect('Content-Type', 'application/octet-stream')
+          .expect(function(res){
+               assert.equal(res.body.toString(), entry.contents); 
+          })
+          .expect(200, callback);
+      }
+      else
+      {
+        request(server)
+          .post('/files/get_metadata')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ 'path': '/testfolder1' + entry.folder })
+          .expect(function(res){
+              assert(res.body);
+              assert.equal(res.body[".tag"], "folder");
+              assert.equal(res.body["path_display"], "/testfolder1" + entry.folder);
+          })
+          .expect(200, callback);
+      }
+    },
+    function(err)
+    {
+        log.error("Err:", err);
+        done(err);
+    });
+  });
+
+  it('succeeds in deleting folder tree', function(done) {
+    request(server)
+      .post('/files/delete')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .send({ path: "/testfolder1" })
+      .expect(200, done);
+  });
+
+  it('deleted folder tree not present', function(done) {
+    request(server)
+      .post('/files/get_metadata')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .send({ path: "/testfolder1" })
+      .expect(function(res){
+          assert(res.body);
+          assert.equal(res.body.error_summary, 'path/not_found');
+      })
+      .expect(409, done);
+  });
+
+  after("Cleanup", function(done){
+    request(server)
+      .post('/files/delete')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .send({ path: "/testfolder2" })
+      .expect(200, done);
+  });
+});
+
 //
 // !!! Only if file driver (not implemented in Manta yet)
 //
