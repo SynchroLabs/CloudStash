@@ -2,6 +2,6 @@
     "driver": 
     { 
         "provider": "file", 
-        "basePath": "_mantabox_store" 
+        "basePath": "test/_test_store" 
     }
 }

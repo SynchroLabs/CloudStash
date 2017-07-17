@@ -5,7 +5,7 @@ var async = require('async');
 
 var jwt = require('jsonwebtoken');
 
-var mantaBoxServer = require('./../lib/server');
+var cloudStashServer = require('./../lib/server');
 var loggerModule = require('./../lib/logger');
 loggerModule.createTestLogger();
 
@@ -24,11 +24,11 @@ var _testConfig = require('./../lib/config').getConfig(null,
     "driver":
     { 
         "provider": "file", 
-        "basePath": "_mantabox_store" 
+        "basePath": "test/_test_store" 
     } 
 });
 
-var server = mantaBoxServer(_testSecret, _testConfig);
+var server = cloudStashServer(_testSecret, _testConfig);
 
 var testAccount = 
 { 

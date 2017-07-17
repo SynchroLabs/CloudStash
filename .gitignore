@@ -57,6 +57,6 @@ typings/
 # dotenv environment variables file
 .env
 
-# SYNCHRO
+# CloudStash
 config_manta.json
-_mantabox_store
+test/_test_store/*
