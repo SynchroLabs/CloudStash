@@ -1,0 +1,31 @@
+<html>
+   <head>
+      <meta charset="utf-8">
+      <title>CloudStash Login</title>
+      <link rel="stylesheet" href="/public/style.css">
+   </head>
+   <body>
+      <h1>Authorizing on behalf of app: {{client_id}}</h1>
+      {{#if error}}<h2>Error: {{error}}</h2>{{/if}}
+      <form action="" method="post" enctype="multipart/form-data">
+         <input type="hidden" name="response_type" value="{{response_type}}"/>
+         <input type="hidden" name="client_id" value="{{client_id}}"/>
+         <input type="hidden" name="redirect_uri" value="{{redirect_uri}}"/>
+         <input type="hidden" name="state" value="{{state}}"/>
+         <input type="hidden" name="require_role" value="{{require_role}}"/>
+         <input type="hidden" name="force_reapprove" value="{{force_reapprove}}"/>
+         <input type="hidden" name="disable_signup" value="{{disable_signup}}"/>
+         <input type="hidden" name="locale" value="{{locale}}"/>
+         <input type="hidden" name="force_reauthentication" value="{{force_reauthentication}}"/>
+         <fieldset>
+            <label for="email">Email:</label>
+            <input type="email" id="email" name="email" placeholder="email address" />
+            <br />
+            <label for="password">Password:</label>
+            <input type="password" id="password" name="password" placeholder="password" />
+            <br />
+            <input type="submit" value="OK" />
+         </fieldset>
+      </form>
+   </body>
+</html>

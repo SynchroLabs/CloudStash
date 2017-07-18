@@ -60,3 +60,5 @@ typings/
 # CloudStash
 config_manta.json
 test/_test_store/*
+ssl.crt
+ssl.key
