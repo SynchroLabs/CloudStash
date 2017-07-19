@@ -36,7 +36,7 @@ var testAccount =
     account_id: "1234-BEEF"
 };
 
-var testToken = jwt.sign(testAccount, _testSecret);
+var testToken = jwt.sign(testAccount, _testSecret + "authToken");
 
 // !!! Test delete of folder and contents - not implemented yet (?)
 //
