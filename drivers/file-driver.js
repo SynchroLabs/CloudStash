@@ -23,8 +23,14 @@ module.exports = function(params, config)
 
     function getEntryDetails(user, fullpath)
     {
+        var userPath = path.posix.join(basePath, user.account_id);
+        if (user.app_id)
+        {
+            userPath = path.posix.join(userPath, user.app_id);
+        } 
+
         var fStat = fs.statSync(fullpath);
-        var displayPath = "/" + path.relative(path.posix.join(basePath, user.account_id, user.app_id), fullpath);
+        var displayPath = "/" + path.relative(userPath, fullpath);
 
         var item = { };
         item[".tag"] = fStat.isFile() ? "file" : "folder";
@@ -83,14 +89,16 @@ module.exports = function(params, config)
         return safePath;
     }
 
-    function toSafeLocalUserPath(user, filePath)
+    function toSafeLocalPath(account_id, app_id, filePath)
     {
-        return toSafePath(path.posix.join(basePath, user.account_id, filePath)); 
-    }
-
-    function toSafeLocalUserAppPath(user, filePath)
-    {
-        return toSafePath(path.posix.join(basePath, user.account_id, user.app_id, filePath)); 
+        if (app_id)
+        {
+            return path.posix.join(basePath, account_id, app_id, toSafePath(filePath)); 
+        }
+        else
+        {
+            return path.posix.join(basePath, account_id, toSafePath(filePath));
+        }
     }
 
     var driver = 
@@ -102,7 +110,7 @@ module.exports = function(params, config)
         },
         createDirectory: function(user, dirPath, callback)
         {
-            var fullPath = toSafeLocalUserAppPath(user, dirPath); 
+            var fullPath = toSafeLocalPath(user.account_id, user.app_id, dirPath); 
 
             fs.mkdirs(fullPath, function(err)
             {
@@ -125,7 +133,7 @@ module.exports = function(params, config)
 
             var q = async.queue(function(task, done) 
             {
-                var fullPath = toSafeLocalUserAppPath(user, task.dirpath);
+                var fullPath = toSafeLocalPath(user.account_id, user.app_id, task.dirpath);
 
                 fs.readdir(fullPath, function(err, files) 
                 {
@@ -209,7 +217,7 @@ module.exports = function(params, config)
 
             var q = async.queue(function(task, done) 
             {
-                var fullPath = toSafeLocalUserAppPath(user, task.dirpath);
+                var fullPath = toSafeLocalPath(user.account_id, user.app_id, task.dirpath);
 
                 fs.readdir(fullPath, function(err, files) 
                 {
@@ -269,7 +277,7 @@ module.exports = function(params, config)
 
             var q = async.queue(function(task, done) 
             {
-                var fullPath = toSafeLocalUserAppPath(user, task.dirpath);
+                var fullPath = toSafeLocalPath(user.account_id, user.app_id, task.dirpath);
 
                 fs.readdir(fullPath, function(err, files) 
                 {
@@ -336,7 +344,7 @@ module.exports = function(params, config)
 
             var q = async.queue(function(task, done) 
             {
-                var fullPath = toSafeLocalUserAppPath(user, task.dirpath);
+                var fullPath = toSafeLocalPath(user.account_id, user.app_id, task.dirpath);
 
                 fs.readdir(fullPath, function(err, files) 
                 {
@@ -413,7 +421,7 @@ module.exports = function(params, config)
         },        
         getObject: function(user, filename, callback)
         {
-            var filePath = toSafeLocalUserAppPath(user, filename);
+            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
             try
             {
@@ -441,7 +449,7 @@ module.exports = function(params, config)
         },
         putObject: function(user, filename, callback)
         {
-            var filePath = toSafeLocalUserAppPath(user, filename); 
+            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
             fs.ensureDir(path.dirname(filePath), function(err)
             {
@@ -459,8 +467,8 @@ module.exports = function(params, config)
         },
         copyObject: function(user, filename, newFilename, callback)
         {
-            var filePath = toSafeLocalUserAppPath(user, filename); 
-            var newFilePath = toSafeLocalUserAppPath(user, newFilename); 
+            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
+            var newFilePath = toSafeLocalPath(user.account_id, user.app_id, newFilename);
             
             fs.copy(filePath, newFilePath, function(err) // Creates directories as needed
             {
@@ -476,8 +484,8 @@ module.exports = function(params, config)
         },
         moveObject: function(user, filename, newFilename, callback)
         {
-            var filePath = toSafeLocalUserAppPath(user, filename); 
-            var newFilePath = toSafeLocalUserAppPath(user, newFilename); 
+            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
+            var newFilePath = toSafeLocalPath(user.account_id, user.app_id, newFilename);
 
             fs.move(filePath, newFilePath, function(err) // Creates directories as needed
             {
@@ -495,7 +503,7 @@ module.exports = function(params, config)
         {
             // This will remove a file or a directory, so let's hope it's used correctly
             //
-            var filePath = toSafeLocalUserAppPath(user, filename);
+            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
             var entry = getEntryDetails(user, filePath);
 
@@ -506,11 +514,10 @@ module.exports = function(params, config)
         },
         getObjectMetaData: function(user, filename, callback)
         {
-            log.info("getObjectMetaData for path:", filename);
-            var filePath = toSafeLocalUserAppPath(user, filename);
-
             try
             {
+                log.info("getObjectMetaData for path:", filename);
+                var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
                 callback(null, getEntryDetails(user, filePath));
             }
             catch (err)
@@ -533,7 +540,7 @@ module.exports = function(params, config)
             //
             var uploadId = uuidv4();
 
-            var uploadPath = toSafeLocalUserPath(user, path.join("uploads", uploadId, "0.bin"));
+            var uploadPath = toSafeLocalPath(user.account_id, null, path.join("uploads", uploadId, "0.bin"));
 
             fs.ensureDir(path.dirname(uploadPath), function(err)
             {
@@ -549,13 +556,13 @@ module.exports = function(params, config)
         },
         multipartUpload: function(user, uploadId, offset, callback)
         {
-            var uploadPath = toSafeLocalUserPath(user, path.join("uploads", uploadId, offset.toString() + ".bin"));
+            var uploadPath = toSafeLocalPath(user.account_id, null, path.join("uploads", uploadId, offset.toString() + ".bin"));
             callback(null, fs.createWriteStream(uploadPath));
         },
         finishMultipartUpload: function(user, uploadId, filename, callback)
         {
-            var uploadDirPath = toSafeLocalUserPath(user, path.join("uploads", uploadId));
-            var filePath = toSafeLocalUserAppPath(user, filename); 
+            var uploadDirPath = toSafeLocalPath(user.account_id, null, path.join("uploads", uploadId));
+            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename); 
 
             log.info("Processing finishMultipartUpload for upload '%s', writing to dest: %s", uploadId, filename);
 

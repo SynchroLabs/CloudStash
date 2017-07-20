@@ -84,12 +84,24 @@ module.exports = function(params, config)
         log: log
     });
 
-    function toSafeLocalPath(user, fileName)
+    function toSafePath(filePath)
     {
         // path.posix.normalize will move any ../ to the front, and the regex will remove them.
         //
-        var safeFilename = path.posix.normalize(fileName).replace(/^(\.\.[\/\\])+/, '');
+        var safePath = path.posix.normalize(filePath).replace(/^(\.\.[\/\\])+/, '');
 
+        if (path.sep != '/')
+        {
+            // Replace forward slash with local platform seperator
+            //
+            safePath = filePath.replace(/[\/]/g, path.sep);
+        }
+
+        return safePath;
+    }
+
+    function toSafeLocalPath(account_id, app_id, filePath)
+    {
         // !!! This forms a path of basePath/account_id/app_id/xxxxx - For scale, we assume the account_id
         //     is a GUID (randomly distributed digits).  In order to keep directories from getting too large, 
         //     we can break down the path further using the first three pairs of characters from the GUID, for
@@ -97,9 +109,14 @@ module.exports = function(params, config)
         //     the first two levels of directories will be "full" (256 entries), and the third level will contain
         //     an average of 6 accounts.
         //
-        var filePath = path.posix.join(basePath, user.account_id, user.app_id, safeFilename); 
-
-        return filePath;
+        if (app_id)
+        {
+            return path.posix.join(basePath, account_id, app_id, toSafePath(filePath)); 
+        }
+        else
+        {
+            return path.posix.join(basePath, account_id, toSafePath(filePath));
+        }
     }
 
     function getEntryDetails(user, mantaEntry)
@@ -184,7 +201,7 @@ module.exports = function(params, config)
         },
         createDirectory: function(user, dirPath, callback)
         {
-            var fullPath = toSafeLocalPath(user, dirPath); 
+            var fullPath = toSafeLocalPath(user.account_id, user.app_id, dirPath); 
 
             client.mkdirp(fullPath, function(err)
             {
@@ -209,7 +226,7 @@ module.exports = function(params, config)
 
             var q = async.queue(function(task, done) 
             {
-                var fullPath = toSafeLocalPath(user, task.dirpath);
+                var fullPath = toSafeLocalPath(user.account_id, user.app_id, task.dirpath);
 
                 // !!! It appears from the source code that client.ls will make multiple underlying REST API
                 //     calls and page through the entries without us having to do anything special.
@@ -313,7 +330,7 @@ module.exports = function(params, config)
 
             var q = async.queue(function(task, done) 
             {
-                var fullPath = toSafeLocalPath(user, task.dirpath);
+                var fullPath = toSafeLocalPath(user.account_id, user.app_id, task.dirpath);
 
                 // !!! See comment in listDirecory (above) re paging results.
                 //
@@ -397,7 +414,7 @@ module.exports = function(params, config)
 
             var q = async.queue(function(task, done) 
             {
-                var fullPath = toSafeLocalPath(user, task.dirpath);
+                var fullPath = toSafeLocalPath(user.account_id, user.app_id, task.dirpath);
 
                 // !!! See comment in listDirecory (above) re paging results.
                 //
@@ -491,7 +508,7 @@ module.exports = function(params, config)
         },        
         getObject: function(user, filename, callback)
         {
-            var filePath = toSafeLocalPath(user, filename);
+            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
             client.get(filePath, function(err, stream) 
             {
@@ -514,7 +531,7 @@ module.exports = function(params, config)
         },
         putObject: function(user, filename, callback)
         {
-            var filePath = toSafeLocalPath(user, filename);
+            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
             client.mkdirp(path.dirname(filePath), function(err)
             {
@@ -533,8 +550,8 @@ module.exports = function(params, config)
         },
         copyObject: function(user, filename, newFilename, callback)
         {
-            var filePath = toSafeLocalPath(user, filename); 
-            var newFilePath = toSafeLocalPath(user, newFilename); 
+            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename); 
+            var newFilePath = toSafeLocalPath(user.account_id, user.app_id, newFilename); 
             
             client.mkdirp(path.dirname(newFilePath), function(err)
             {
@@ -565,8 +582,8 @@ module.exports = function(params, config)
         },
         moveObject: function(user, filename, newFilename, callback)
         {
-            var filePath = toSafeLocalPath(user, filename); 
-            var newFilePath = toSafeLocalPath(user, newFilename); 
+            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename); 
+            var newFilePath = toSafeLocalPath(user.account_id, user.app_id, newFilename); 
 
             client.mkdirp(path.dirname(newFilePath), function(err)
             {
@@ -611,7 +628,7 @@ module.exports = function(params, config)
             // !!! This will remove a single file or an empty directory only (need to implement support for deleting
             //     non-empty directory).
             //
-            var filePath = toSafeLocalPath(user, filename);
+            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
             client.info(filePath, function(err, info) 
             {
@@ -642,7 +659,7 @@ module.exports = function(params, config)
         },
         getObjectMetaData: function(user, filename, callback)
         {
-            var filePath = toSafeLocalPath(user, filename);
+            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
             var parentPath = path.dirname(filePath);
             var filename = path.basename(filePath);
