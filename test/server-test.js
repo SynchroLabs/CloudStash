@@ -38,9 +38,7 @@ var testAccount =
 
 var testToken = jwt.sign(testAccount, _testSecret + "authToken");
 
-// !!! Test delete of folder and contents - not implemented yet (?)
-//
-// !!! Test copy/move of folders (and their contents) - not implemented yet
+// !!! Test delete of root folder (specified as either "/" or "") - see what Dropbox does.  Ditto move/copy.
 //
 // !!! Test list_folder of non-existent folder
 //
@@ -1026,6 +1024,487 @@ describe('Folder operations', function(done) {
   });
 
   it('deleted folder tree not present', function(done) {
+    request(server)
+      .post('/files/get_metadata')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .send({ path: "/testfolder1" })
+      .expect(function(res){
+          assert(res.body);
+          assert.equal(res.body.error_summary, 'path/not_found');
+      })
+      .expect(409, done);
+  });
+
+  after("Cleanup", function(done){
+    request(server)
+      .post('/files/delete')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .send({ path: "/testfolder2" })
+      .expect(200, done);
+  });
+});
+
+describe('Folder batch operations', function(done) 
+{
+  var files =
+  [
+    { file: "/one.txt", contents: "This is file one.txt" },
+    { file: "/two.txt", contents: "This is file two.txt" },
+    { file: "/subfolder/three.txt", contents: "This is file three.txt" },
+    { file: "/subfolder/four.txt", contents: "This is file four.txt" },
+    { folder: "/empty" },
+    { file: "/five.txt", contents: "This is file five.txt" }
+  ]
+
+  before("Create folder contents (testfolder)", function(done)
+  {
+    async.eachSeries(files, function(entry, callback)
+    {
+      if (entry.file)
+      {
+        request(server)
+          .post('/files/upload')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .set('Dropbox-API-Arg', '{ "path": "/testfolder' + entry.file + '" }')
+          .send(entry.contents)
+          .expect(200, callback);
+      }
+      else
+      {
+        request(server)
+          .post('/files/create_folder')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ 'path': '/testfolder' + entry.folder })
+          .expect(200, callback);
+      }
+    },
+    function(err)
+    {
+        log.error("Err:", err);
+        done(err);
+    });
+  });
+
+  var async_job_id;
+
+  it('succeeds in batch move of folder tree', function(done) {
+    request(server)
+      .post('/files/move_batch')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .send({ entries: [ { from_path: "/testfolder", to_path: "/testfolder1" } ] })
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert.equal(res.body[".tag"], 'async_job_id');
+          async_job_id = res.body["async_job_id"];
+          log.info("Got job id:", async_job_id);
+      })
+      .expect(200, done);
+  });
+
+  it('gets "complete" from batch move folder tree job', function(done) {
+    var complete = false;
+    async.whilst(
+      function() 
+      { 
+        return !complete;
+      },
+      function(callback) 
+      {
+        request(server)
+          .post('/files/move_batch/check')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ "async_job_id": async_job_id })
+          .expect('Content-Type', /json/)
+          .expect(function(res){
+              assert(res.body);
+              if (res.body[".tag"] === "complete")
+              {
+                log.info("Batch move complete");
+                complete = true;
+              }
+              else
+              {
+                // If not complete, anything other than in_progress is an error
+                assert.equal(res.body[".tag"], 'in_progress');
+              }
+          })
+          .expect(200, function(err)
+          {
+            if (err || complete)
+            {
+              callback(err);
+            }
+            else
+            {
+              // If we're not done, wait before retrying
+              setTimeout(callback, 1000);
+            }
+          });
+      },
+      function (err, n) 
+      {
+          done(err);
+      }      
+    );
+  });
+
+  it('batch moved folder tree contents are correct', function(done) {
+    async.eachSeries(files, function(entry, callback)
+    {
+      if (entry.file)
+      {
+        request(server)
+          .post('/files/download')
+          .set('Accept', 'application/octet-stream')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ "path": "/testfolder1/" + entry.file })
+          .set('Dropbox-API-Arg', '{ "path": "/testfolder1' + entry.file + '" }')
+          .expect('Content-Type', 'application/octet-stream')
+          .expect(function(res){
+               assert.equal(res.body.toString(), entry.contents); 
+          })
+          .expect(200, callback);
+      }
+      else
+      {
+        request(server)
+          .post('/files/get_metadata')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ 'path': '/testfolder1' + entry.folder })
+          .expect(function(res){
+              assert(res.body);
+              assert.equal(res.body[".tag"], "folder");
+              assert.equal(res.body["path_display"], "/testfolder1" + entry.folder);
+          })
+          .expect(200, callback);
+      }
+    },
+    function(err)
+    {
+        log.error("Err:", err);
+        done(err);
+    });
+  });
+
+  it('source folder no longer present after batch move', function(done) {
+    request(server)
+      .post('/files/get_metadata')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .send({ path: "/testfolder" })
+      .expect(function(res){
+          assert(res.body);
+          assert.equal(res.body.error_summary, 'path/not_found');
+      })
+      .expect(409, done);
+  });
+
+  it('batch job is no longer valid after complete', function(done) {
+    request(server)
+      .post('/files/move_batch/check')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .send({ "async_job_id": async_job_id })
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert.equal(res.body.error_summary, 'invalid_async_job_id/...');
+      })
+      .expect(409, done);
+  });
+
+  it('succeeds in starting batch move that will fail', function(done) {
+    request(server)
+      .post('/files/move_batch')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .send({ entries: [ { from_path: "/nonexistantfolder", to_path: "/testfolder1" } ] })
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert.equal(res.body[".tag"], 'async_job_id');
+          async_job_id = res.body["async_job_id"];
+          log.info("Got job id:", async_job_id);
+      })
+      .expect(200, done);
+  });
+
+  it('gets "failed" from batch move job that failed', function(done) {
+    var complete = false;
+    async.whilst(
+      function() 
+      { 
+        return !complete;
+      },
+      function(callback) 
+      {
+        request(server)
+          .post('/files/move_batch/check')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ "async_job_id": async_job_id })
+          .expect('Content-Type', /json/)
+          .expect(function(res){
+              assert(res.body);
+              if (res.body[".tag"] === "failed")
+              {
+                log.info("Batch move failed");
+                complete = true;
+              }
+              else
+              {
+                // If not complete, anything other than in_progress is an error
+                assert.equal(res.body[".tag"], 'in_progress');
+              }
+          })
+          .expect(200, function(err)
+          {
+            if (err || complete)
+            {
+              callback(err);
+            }
+            else
+            {
+              // If we're not done, wait before retrying
+              setTimeout(callback, 1000);
+            }
+          });
+      },
+      function (err, n) 
+      {
+          done(err);
+      }      
+    );
+  });
+
+  it('batch job is no longer valid after failed', function(done) {
+    request(server)
+      .post('/files/move_batch/check')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .send({ "async_job_id": async_job_id })
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert.equal(res.body.error_summary, 'invalid_async_job_id/...');
+      })
+      .expect(409, done);
+  });
+
+  it('succeeds in copying folder tree', function(done) {
+    request(server)
+      .post('/files/copy_batch')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .send({ "entries": [ { from_path: "/testfolder1", to_path: "/testfolder2" } ] })
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert.equal(res.body[".tag"], 'async_job_id');
+          async_job_id = res.body["async_job_id"];
+          log.info("Got job id:", async_job_id);
+      })
+      .expect(200, done);
+  });
+
+  it('gets "complete" from batch copy folder tree job', function(done) {
+    var complete = false;
+    async.whilst(
+      function() 
+      { 
+        return !complete;
+      },
+      function(callback) 
+      {
+        request(server)
+          .post('/files/copy_batch/check')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ "async_job_id": async_job_id })
+          .expect('Content-Type', /json/)
+          .expect(function(res){
+              assert(res.body);
+              if (res.body[".tag"] === "complete")
+              {
+                log.info("Batch move complete");
+                complete = true;
+              }
+              else
+              {
+                // If not complete, anything other than in_progress is an error
+                assert.equal(res.body[".tag"], 'in_progress');
+              }
+          })
+          .expect(200, function(err)
+          {
+            if (err || complete)
+            {
+              callback(err);
+            }
+            else
+            {
+              // If we're not done, wait before retrying
+              setTimeout(callback, 1000);
+            }
+          });
+      },
+      function (err, n) 
+      {
+          done(err);
+      }      
+    );
+  });
+
+  it('batch copied folder tree contents are correct', function(done) {
+    async.eachSeries(files, function(entry, callback)
+    {
+      if (entry.file)
+      {
+        request(server)
+          .post('/files/download')
+          .set('Accept', 'application/octet-stream')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ "path": "/testfolder2/" + entry.file })
+          .set('Dropbox-API-Arg', '{ "path": "/testfolder2' + entry.file + '" }')
+          .expect('Content-Type', 'application/octet-stream')
+          .expect(function(res){
+               assert.equal(res.body.toString(), entry.contents); 
+          })
+          .expect(200, callback);
+      }
+      else
+      {
+        request(server)
+          .post('/files/get_metadata')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ 'path': '/testfolder2' + entry.folder })
+          .expect(function(res){
+              assert(res.body);
+              assert.equal(res.body[".tag"], "folder");
+              assert.equal(res.body["path_display"], "/testfolder2" + entry.folder);
+          })
+          .expect(200, callback);
+      }
+    },
+    function(err)
+    {
+        log.error("Err:", err);
+        done(err);
+    });
+  });
+
+  it('source of batch copied folder tree contents unchanged', function(done) {
+    async.eachSeries(files, function(entry, callback)
+    {
+      if (entry.file)
+      {
+        request(server)
+          .post('/files/download')
+          .set('Accept', 'application/octet-stream')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ "path": "/testfolder1/" + entry.file })
+          .set('Dropbox-API-Arg', '{ "path": "/testfolder1' + entry.file + '" }')
+          .expect('Content-Type', 'application/octet-stream')
+          .expect(function(res){
+               assert.equal(res.body.toString(), entry.contents); 
+          })
+          .expect(200, callback);
+      }
+      else
+      {
+        request(server)
+          .post('/files/get_metadata')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ 'path': '/testfolder1' + entry.folder })
+          .expect(function(res){
+              assert(res.body);
+              assert.equal(res.body[".tag"], "folder");
+              assert.equal(res.body["path_display"], "/testfolder1" + entry.folder);
+          })
+          .expect(200, callback);
+      }
+    },
+    function(err)
+    {
+        log.error("Err:", err);
+        done(err);
+    });
+  });
+
+  it('succeeds in batch deleting folder tree', function(done) {
+    request(server)
+      .post('/files/delete_batch')
+      .set('Accept', 'application/json')
+      .set('Authorization', "Bearer " + testToken)
+      .send({ "entries": [ { path: "/testfolder1" } ] })
+      .expect(function(res){
+          assert(res.body);
+          assert.equal(res.body[".tag"], 'async_job_id');
+          async_job_id = res.body["async_job_id"];
+          log.info("Got job id:", async_job_id);
+      })
+      .expect(200, done);
+  });
+
+  it('gets "complete" from batch delete folder tree job', function(done) {
+    var complete = false;
+    async.whilst(
+      function() 
+      { 
+        return !complete;
+      },
+      function(callback) 
+      {
+        request(server)
+          .post('/files/delete_batch/check')
+          .set('Accept', 'application/json')
+          .set('Authorization', "Bearer " + testToken)
+          .send({ "async_job_id": async_job_id })
+          .expect('Content-Type', /json/)
+          .expect(function(res){
+              assert(res.body);
+              if (res.body[".tag"] === "complete")
+              {
+                log.info("Batch delete complete");
+                complete = true;
+              }
+              else
+              {
+                // If not complete, anything other than in_progress is an error
+                assert.equal(res.body[".tag"], 'in_progress');
+              }
+          })
+          .expect(200, function(err)
+          {
+            if (err || complete)
+            {
+              callback(err);
+            }
+            else
+            {
+              // If we're not done, wait before retrying
+              setTimeout(callback, 1000);
+            }
+          });
+      },
+      function (err, n) 
+      {
+          done(err);
+      }      
+    );
+  });
+
+  it('batch deleted folder tree not present', function(done) {
     request(server)
       .post('/files/get_metadata')
       .set('Accept', 'application/json')

@@ -184,11 +184,11 @@ module.exports = function(params, config)
                 });
             }, maxConcurrency);
 
-            q.error = function(err, task)
+            q.error = lodash.once(function(err, task)
             {
                 q.kill();
                 callback(err);
-            };
+            });
 
             q.drain = function() 
             {
@@ -258,11 +258,11 @@ module.exports = function(params, config)
                 });
             }, maxConcurrency);
 
-            q.error = function(err, task)
+            q.error = lodash.once(function(err, task)
             {
                 q.kill();
                 callback(err);
-            };
+            });
 
             q.drain = function() 
             {
@@ -325,11 +325,11 @@ module.exports = function(params, config)
                 });
             }, maxConcurrency);
 
-            q.error = function(err, task)
+            q.error = lodash.once(function(err, task)
             {
                 q.kill();
                 callback(err);
-            };
+            });
 
             q.drain = function() 
             {
@@ -393,11 +393,11 @@ module.exports = function(params, config)
                 });
             }, maxConcurrency);
 
-            q.error = function(err, task)
+            q.error = lodash.once(function(err, task)
             {
                 q.kill();
                 callback(err);
-            };
+            });
 
             q.drain = function() 
             {
