@@ -29,7 +29,7 @@ module.exports = function(params, config)
             userPath = path.posix.join(userPath, user.app_id);
         } 
 
-        var fStat = fs.statSync(fullpath);
+        var fStat = fs.statSync(fullpath); // !!! What if not found?
         var displayPath = "/" + path.relative(userPath, fullpath);
 
         var item = { };
@@ -37,15 +37,18 @@ module.exports = function(params, config)
         item["name"] = path.basename(displayPath);
         item["path_lower"] = displayPath.toLowerCase();
         item["path_display"] = displayPath;
-        // item["id"]
-        // item["client_modified"]
+        item["id"] = displayPath; // !!! Required by Dropbox - String(min_length=1)
 
         // At least in MacOS, the mtime of a directory is equal to the mtime of the most recent file it contains.
         // For our purposes, we need the last time the directory itself was modified, which on a file-based
         // implementation (with no properties, integral rename, etc), is the creation time.
         //
-        item["server_modified"] = fStat.isFile() ? fStat.mtime.toISOString() : fStat.birthtime.toISOString();
-        //item["rev"]
+        var mtime = fStat.isFile() ? fStat.mtime.toISOString() : fStat.birthtime.toISOString();
+        item["server_modified"] = mtime.replace(/\.\d{3}/, ''); // !!! Remove ms for Dropbox
+        item["client_modified"] = item["server_modified"]; // !!! Required by Dropbox
+
+        item["rev"] = "000000001"; // !!! Required by Dropbox - String(min_length=9, pattern="[0-9a-f]+")
+
         item["size"] = fStat.size;
         // item["content_hash"]
 
@@ -421,6 +424,8 @@ module.exports = function(params, config)
         },        
         getObject: function(user, filename, callback)
         {
+            var entry = getEntryDetails(user, filename);
+
             var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
             try
@@ -434,7 +439,7 @@ module.exports = function(params, config)
                 }
                 else
                 {
-                    callback(null, fs.createReadStream(filePath));
+                    callback(null, entry, fs.createReadStream(filePath));
                 }
             }
             catch (err)

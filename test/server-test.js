@@ -58,7 +58,10 @@ describe('/users/get_current_account', function() {
       .set('Authorization', "Bearer " + testToken)
       .expect('Content-Type', /json/)
       .expect(function(res){
-          assert.equal(res.body.account_id, testAccount.account_id); 
+          assert(res.body); 
+          assert(res.body.account_id); 
+          assert.equal(res.body.account_id.length, 40); 
+          assert.equal(res.body.account_id.trim(), testAccount.account_id); 
       })
       .expect(200, done);
   });

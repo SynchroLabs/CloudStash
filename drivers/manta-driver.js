@@ -155,10 +155,12 @@ module.exports = function(params, config)
 
         item["path_lower"] = displayPath.toLowerCase();
         item["path_display"] = displayPath;
-        // item["id"]
-        // item["client_modified"]
-        item["server_modified"] = mantaEntry.mtime;
-        //item["rev"]
+        item["id"] = displayPath; // !!! Required by Dropbox - String(min_length=1)
+
+        item["server_modified"] = mantaEntry.mtime.replace(/\.\d{3}/, ''); // !!! Remove ms for Dropbox
+        item["client_modified"] = item["server_modified"]; // !!! Required by Dropbox
+
+        item["rev"] = "000000001"; // !!! Required by Dropbox - String(min_length=9, pattern="[0-9a-f]+")
         if (mantaEntry.size)
         {
             // Not present on directory entry
@@ -239,7 +241,7 @@ module.exports = function(params, config)
                 {
                     if (err)
                     {
-                        if ((err.code == 'NOTFOUND') && (dirPath == ''))
+                        if ((err.name == 'NotFoundError') && (dirPath == ''))
                         {
                             // If the error is 'not found' and the dir in question is the root dir, we're just
                             // going to ignore that and return an empty dir lising (just means we haven't created
@@ -508,25 +510,40 @@ module.exports = function(params, config)
         },        
         getObject: function(user, filename, callback)
         {
-            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
-
-            client.get(filePath, function(err, stream) 
+            // !!! We need to return metadata with the stream, which requires a separate Manta call
+            //
+            this.getObjectMetaData(user, filename, function(err, entry)
             {
                 if (err)
                 {
-                    if (err.code == 'ResourceNotFound')
-                    {
-                        // Return null - file doesn't exist
-                        callback(null, null);
-                    }
-                    else
-                    {
-                        log.error(err);
-                        callback(err);
-                    }
+                    // !!! Details?
+                    log.error("Error getting metadata on getObject:", err);
+                    callback(err);
                 }
+                else
+                {
+                    var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
-                callback(null, stream);
+                    client.get(filePath, function(err, stream)
+                    {
+                        if (err)
+                        {
+                            log.error("Error getObject:", err);
+                            if (err.code == 'ResourceNotFound')
+                            {
+                                // Return null - file doesn't exist
+                                callback(null, null);
+                            }
+                            else
+                            {
+                                log.error(err);
+                                callback(err);
+                            }
+                        }
+
+                        callback(null, entry, stream);
+                    });
+                }
             });
         },
         putObject: function(user, filename, callback)
