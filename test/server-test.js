@@ -53,12 +53,11 @@ var testToken = jwt.sign(testAccount, _testSecret + "authToken");
 describe('/users/get_current_account', function() {
   it('returns account id', function(done) {
     request(server)
-      .post('/users/get_current_account')
+      .post('/2/users/get_current_account')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .expect('Content-Type', /json/)
       .expect(function(res){
-          assert.equal(res.body.app_id, testAccount.app_id); 
           assert.equal(res.body.account_id, testAccount.account_id); 
       })
       .expect(200, done);
@@ -68,7 +67,7 @@ describe('/users/get_current_account', function() {
 describe('files/list_folder on empty root folder', function() {
   it('succeeds and returns 0 entries', function(done) {
     request(server)
-      .post('/files/list_folder')
+      .post('/2/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "" })
@@ -85,7 +84,7 @@ describe('files/list_folder on empty root folder', function() {
 describe('files/upload of foo.txt to root', function() {
   it('succeeds', function(done) {
     request(server)
-      .post('/files/upload')
+      .post('/2/files/upload')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .set('Dropbox-API-Arg', '{ "path": "/foo.txt" }')
@@ -100,7 +99,7 @@ describe('files/upload of foo.txt to root', function() {
   });
   it('file shows up in list', function(done) {
     request(server)
-      .post('/files/list_folder')
+      .post('/2/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "" })
@@ -119,7 +118,7 @@ describe('files/upload of foo.txt to root', function() {
 describe('/files/download of foo.txt', function() {
   it('returns file contents', function(done) {
     request(server)
-      .post('/files/download')
+      .post('/2/files/download')
       .set('Accept', 'application/octet-stream')
       .set('Authorization', "Bearer " + testToken)
       .set('Dropbox-API-Arg', '{ "path": "foo.txt" }')
@@ -134,7 +133,7 @@ describe('/files/download of foo.txt', function() {
 describe('/files/create_folder of test_folder', function() {
   it('succeeds in creating folder', function(done) {
     request(server)
-      .post('/files/create_folder')
+      .post('/2/files/create_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "/test_folder" })
@@ -148,7 +147,7 @@ describe('/files/create_folder of test_folder', function() {
   });
   it('new folder shows up in parent folder', function(done) {
     request(server)
-      .post('/files/list_folder')
+      .post('/2/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "" })
@@ -162,7 +161,7 @@ describe('/files/create_folder of test_folder', function() {
   });
   it('new folder list_folder succeeds', function(done) {
     request(server)
-      .post('/files/list_folder')
+      .post('/2/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "/test_folder" })
@@ -179,7 +178,7 @@ describe('/files/create_folder of test_folder', function() {
 describe('/files/get_metadata', function() {
   it('succeeds for existing folder', function(done) {
     request(server)
-      .post('/files/get_metadata')
+      .post('/2/files/get_metadata')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "/test_folder" })
@@ -193,7 +192,7 @@ describe('/files/get_metadata', function() {
   });
   it('succeeds for existing file', function(done) {
     request(server)
-      .post('/files/get_metadata')
+      .post('/2/files/get_metadata')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "/foo.txt" })
@@ -207,7 +206,7 @@ describe('/files/get_metadata', function() {
   });
   it('fails for non-existant object', function(done) {
     request(server)
-      .post('/files/get_metadata')
+      .post('/2/files/get_metadata')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "/flarf" })
@@ -226,7 +225,7 @@ describe('/files/get_metadata', function() {
 describe('/files/copy foo.txt to test_folder/bar.txt', function() {
   it('succeeds in copying file', function(done) {
     request(server)
-      .post('/files/copy')
+      .post('/2/files/copy')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ from_path: "/foo.txt", to_path: "/test_folder/bar.txt" })
@@ -241,7 +240,7 @@ describe('/files/copy foo.txt to test_folder/bar.txt', function() {
   });
   it('file shows up in new location', function(done) {
     request(server)
-      .post('/files/list_folder')
+      .post('/2/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "/test_folder" })
@@ -258,7 +257,7 @@ describe('/files/copy foo.txt to test_folder/bar.txt', function() {
   });
   it('new file has correct contents', function(done) {
     request(server)
-      .post('/files/download')
+      .post('/2/files/download')
       .set('Accept', 'application/octet-stream')
       .set('Authorization', "Bearer " + testToken)
       .set('Dropbox-API-Arg', '{ "path": "/test_folder/bar.txt" }')
@@ -273,7 +272,7 @@ describe('/files/copy foo.txt to test_folder/bar.txt', function() {
 describe('/files/copy foo.txt to existing test_folder/bar.txt', function() {
   it('fails in copying file over existing', function(done) {
     request(server)
-      .post('/files/copy')
+      .post('/2/files/copy')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ from_path: "/foo.txt", to_path: "/test_folder/bar.txt" })
@@ -289,7 +288,7 @@ describe('/files/copy foo.txt to existing test_folder/bar.txt', function() {
   });
   it('succeeds in copying file over existing with overwrite', function(done) {
     request(server)
-      .post('/files/copy')
+      .post('/2/files/copy')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ from_path: "/foo.txt", to_path: "/test_folder/bar.txt", overwrite: true })
@@ -304,7 +303,7 @@ describe('/files/copy foo.txt to existing test_folder/bar.txt', function() {
   });
   it('succeeds in copying file over existing with rename', function(done) {
     request(server)
-      .post('/files/copy')
+      .post('/2/files/copy')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ from_path: "/foo.txt", to_path: "/test_folder/bar.txt", autorename: true })
@@ -320,7 +319,7 @@ describe('/files/copy foo.txt to existing test_folder/bar.txt', function() {
   after("Clean up folder contents", function(done)
   {
     request(server)
-      .post('/files/delete')
+      .post('/2/files/delete')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "test_folder/bar (1).txt" })
@@ -332,7 +331,7 @@ describe('/files/copy foo.txt to existing test_folder/bar.txt', function() {
 describe('/files/delete of foo.txt', function() {
   it('succeeds in deleting file', function(done) {
     request(server)
-      .post('/files/delete')
+      .post('/2/files/delete')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "foo.txt" })
@@ -346,7 +345,7 @@ describe('/files/delete of foo.txt', function() {
   });
   it('file no longers shows in folder', function(done) {
     request(server)
-      .post('/files/list_folder')
+      .post('/2/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "" })
@@ -365,7 +364,7 @@ describe('/files/delete of foo.txt', function() {
 describe('/files/move of test_folder/bar.txt to baz.txt', function() {
   it('succeeds in moving file', function(done) {
     request(server)
-      .post('/files/move')
+      .post('/2/files/move')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ from_path: "test_folder/bar.txt", to_path: "baz.txt" })
@@ -379,7 +378,7 @@ describe('/files/move of test_folder/bar.txt to baz.txt', function() {
   });
   it('file shows in new folder', function(done) {
     request(server)
-      .post('/files/list_folder')
+      .post('/2/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "" })
@@ -393,7 +392,7 @@ describe('/files/move of test_folder/bar.txt to baz.txt', function() {
   });
   it('file no longers shows in old folder', function(done) {
     request(server)
-      .post('/files/list_folder')
+      .post('/2/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "test_folder" })
@@ -407,7 +406,7 @@ describe('/files/move of test_folder/bar.txt to baz.txt', function() {
   });
   it('new file has correct contents', function(done) {
     request(server)
-      .post('/files/download')
+      .post('/2/files/download')
       .set('Accept', 'application/octet-stream')
       .set('Authorization', "Bearer " + testToken)
       .set('Dropbox-API-Arg', '{ "path": "baz.txt" }')
@@ -422,7 +421,7 @@ describe('/files/move of test_folder/bar.txt to baz.txt', function() {
 describe('/files/delete of test_folder', function() {
   it('succeeds in deleting folder', function(done) {
     request(server)
-      .post('/files/delete')
+      .post('/2/files/delete')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "test_folder" })
@@ -436,7 +435,7 @@ describe('/files/delete of test_folder', function() {
   });
   it('folder no longers shows in root', function(done) {
     request(server)
-      .post('/files/list_folder')
+      .post('/2/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "" })
@@ -455,7 +454,7 @@ describe('/files/delete of test_folder', function() {
 describe('/files/delete of baz.txt (last remaining file)', function() {
   it('succeeds in deleting file', function(done) {
     request(server)
-      .post('/files/delete')
+      .post('/2/files/delete')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "baz.txt" })
@@ -469,7 +468,7 @@ describe('/files/delete of baz.txt (last remaining file)', function() {
   });
   it('root folder is empty', function(done) {
     request(server)
-      .post('/files/list_folder')
+      .post('/2/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "" })
@@ -510,7 +509,7 @@ describe("list folder and friends", function() {
     {
         log.info("Processing file:", file.name);
         request(server)
-          .post('/files/upload')
+          .post('/2/files/upload')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .set('Dropbox-API-Arg', '{ "path": "' + file.name + '" }')
@@ -552,7 +551,7 @@ describe("list folder and friends", function() {
 
   it('non-recursive list_folder on root contains correct files', function(done) {
     request(server)
-      .post('/files/list_folder')
+      .post('/2/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "" })
@@ -574,7 +573,7 @@ describe("list folder and friends", function() {
 
   it('recursive list_folder on root contains correct files', function(done) {
     request(server)
-      .post('/files/list_folder')
+      .post('/2/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "", recursive: true })
@@ -600,7 +599,7 @@ describe("list folder and friends", function() {
 
   it('recursive list_folder on root returns correct first page of results', function(done) {
     request(server)
-      .post('/files/list_folder')
+      .post('/2/files/list_folder')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "", recursive: true, limit: 3 })
@@ -622,7 +621,7 @@ describe("list folder and friends", function() {
 
   it('list_folder/continue on recursive list_folder on root returns correct second page of results', function(done) {
     request(server)
-      .post('/files/list_folder/continue')
+      .post('/2/files/list_folder/continue')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ cursor: cursor })
@@ -644,7 +643,7 @@ describe("list folder and friends", function() {
 
   it('list_folder/continue on cursor from end of results returns no results', function(done) {
     request(server)
-      .post('/files/list_folder/continue')
+      .post('/2/files/list_folder/continue')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ cursor: cursor })
@@ -665,7 +664,7 @@ describe("list folder and friends", function() {
       function(callback) 
       {
         request(server)
-          .post('/files/upload')
+          .post('/2/files/upload')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .set('Dropbox-API-Arg', '{ "path": "six.txt" }')
@@ -675,7 +674,7 @@ describe("list folder and friends", function() {
       function(callback)
       {
         request(server)
-          .post('/files/list_folder/continue')
+          .post('/2/files/list_folder/continue')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .send({ cursor: cursor })
@@ -703,7 +702,7 @@ describe("list folder and friends", function() {
 
   it('list_folder/get_latest_cursor succeeds', function(done) {
     request(server)
-      .post('/files/list_folder/get_latest_cursor')
+      .post('/2/files/list_folder/get_latest_cursor')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "", recursive: true })
@@ -718,7 +717,7 @@ describe("list folder and friends", function() {
 
   it('list_folder/continue on get_latest_cursor returns no results', function(done) {
     request(server)
-      .post('/files/list_folder/continue')
+      .post('/2/files/list_folder/continue')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ cursor: cursor })
@@ -739,7 +738,7 @@ describe("list folder and friends", function() {
       function(callback) 
       {
         request(server)
-          .post('/files/upload')
+          .post('/2/files/upload')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .set('Dropbox-API-Arg', '{ "path": "seven.txt" }')
@@ -749,7 +748,7 @@ describe("list folder and friends", function() {
       function(callback)
       {
         request(server)
-          .post('/files/list_folder/continue')
+          .post('/2/files/list_folder/continue')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .send({ cursor: cursor })
@@ -794,7 +793,7 @@ describe("list folder and friends", function() {
     async.eachSeries(files, function(file, callback)
     {
         request(server)
-          .post('/files/delete')
+          .post('/2/files/delete')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .send({ path: file })
@@ -830,7 +829,7 @@ describe('Folder operations', function(done) {
       if (entry.file)
       {
         request(server)
-          .post('/files/upload')
+          .post('/2/files/upload')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .set('Dropbox-API-Arg', '{ "path": "/testfolder' + entry.file + '" }')
@@ -840,7 +839,7 @@ describe('Folder operations', function(done) {
       else
       {
         request(server)
-          .post('/files/create_folder')
+          .post('/2/files/create_folder')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .send({ 'path': '/testfolder' + entry.folder })
@@ -856,7 +855,7 @@ describe('Folder operations', function(done) {
 
   it('succeeds in moving folder tree', function(done) {
     request(server)
-      .post('/files/move')
+      .post('/2/files/move')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ from_path: "/testfolder", to_path: "/testfolder1" })
@@ -875,7 +874,7 @@ describe('Folder operations', function(done) {
       if (entry.file)
       {
         request(server)
-          .post('/files/download')
+          .post('/2/files/download')
           .set('Accept', 'application/octet-stream')
           .set('Authorization', "Bearer " + testToken)
           .send({ "path": "/testfolder1/" + entry.file })
@@ -889,7 +888,7 @@ describe('Folder operations', function(done) {
       else
       {
         request(server)
-          .post('/files/get_metadata')
+          .post('/2/files/get_metadata')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .send({ 'path': '/testfolder1' + entry.folder })
@@ -910,7 +909,7 @@ describe('Folder operations', function(done) {
 
   it('move source folder no longer present after move', function(done) {
     request(server)
-      .post('/files/get_metadata')
+      .post('/2/files/get_metadata')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "/testfolder" })
@@ -923,7 +922,7 @@ describe('Folder operations', function(done) {
 
   it('succeeds in copying folder tree', function(done) {
     request(server)
-      .post('/files/copy')
+      .post('/2/files/copy')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ from_path: "/testfolder1", to_path: "/testfolder2" })
@@ -942,7 +941,7 @@ describe('Folder operations', function(done) {
       if (entry.file)
       {
         request(server)
-          .post('/files/download')
+          .post('/2/files/download')
           .set('Accept', 'application/octet-stream')
           .set('Authorization', "Bearer " + testToken)
           .send({ "path": "/testfolder2/" + entry.file })
@@ -956,7 +955,7 @@ describe('Folder operations', function(done) {
       else
       {
         request(server)
-          .post('/files/get_metadata')
+          .post('/2/files/get_metadata')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .send({ 'path': '/testfolder2' + entry.folder })
@@ -981,7 +980,7 @@ describe('Folder operations', function(done) {
       if (entry.file)
       {
         request(server)
-          .post('/files/download')
+          .post('/2/files/download')
           .set('Accept', 'application/octet-stream')
           .set('Authorization', "Bearer " + testToken)
           .send({ "path": "/testfolder1/" + entry.file })
@@ -995,7 +994,7 @@ describe('Folder operations', function(done) {
       else
       {
         request(server)
-          .post('/files/get_metadata')
+          .post('/2/files/get_metadata')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .send({ 'path': '/testfolder1' + entry.folder })
@@ -1016,7 +1015,7 @@ describe('Folder operations', function(done) {
 
   it('succeeds in deleting folder tree', function(done) {
     request(server)
-      .post('/files/delete')
+      .post('/2/files/delete')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "/testfolder1" })
@@ -1025,7 +1024,7 @@ describe('Folder operations', function(done) {
 
   it('deleted folder tree not present', function(done) {
     request(server)
-      .post('/files/get_metadata')
+      .post('/2/files/get_metadata')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "/testfolder1" })
@@ -1038,7 +1037,7 @@ describe('Folder operations', function(done) {
 
   after("Cleanup", function(done){
     request(server)
-      .post('/files/delete')
+      .post('/2/files/delete')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "/testfolder2" })
@@ -1065,7 +1064,7 @@ describe('Folder batch operations', function(done)
       if (entry.file)
       {
         request(server)
-          .post('/files/upload')
+          .post('/2/files/upload')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .set('Dropbox-API-Arg', '{ "path": "/testfolder' + entry.file + '" }')
@@ -1075,7 +1074,7 @@ describe('Folder batch operations', function(done)
       else
       {
         request(server)
-          .post('/files/create_folder')
+          .post('/2/files/create_folder')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .send({ 'path': '/testfolder' + entry.folder })
@@ -1093,7 +1092,7 @@ describe('Folder batch operations', function(done)
 
   it('succeeds in batch move of folder tree', function(done) {
     request(server)
-      .post('/files/move_batch')
+      .post('/2/files/move_batch')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ entries: [ { from_path: "/testfolder", to_path: "/testfolder1" } ] })
@@ -1117,7 +1116,7 @@ describe('Folder batch operations', function(done)
       function(callback) 
       {
         request(server)
-          .post('/files/move_batch/check')
+          .post('/2/files/move_batch/check')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .send({ "async_job_id": async_job_id })
@@ -1161,7 +1160,7 @@ describe('Folder batch operations', function(done)
       if (entry.file)
       {
         request(server)
-          .post('/files/download')
+          .post('/2/files/download')
           .set('Accept', 'application/octet-stream')
           .set('Authorization', "Bearer " + testToken)
           .send({ "path": "/testfolder1/" + entry.file })
@@ -1175,7 +1174,7 @@ describe('Folder batch operations', function(done)
       else
       {
         request(server)
-          .post('/files/get_metadata')
+          .post('/2/files/get_metadata')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .send({ 'path': '/testfolder1' + entry.folder })
@@ -1196,7 +1195,7 @@ describe('Folder batch operations', function(done)
 
   it('source folder no longer present after batch move', function(done) {
     request(server)
-      .post('/files/get_metadata')
+      .post('/2/files/get_metadata')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "/testfolder" })
@@ -1209,7 +1208,7 @@ describe('Folder batch operations', function(done)
 
   it('batch job is no longer valid after complete', function(done) {
     request(server)
-      .post('/files/move_batch/check')
+      .post('/2/files/move_batch/check')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ "async_job_id": async_job_id })
@@ -1223,7 +1222,7 @@ describe('Folder batch operations', function(done)
 
   it('succeeds in starting batch move that will fail', function(done) {
     request(server)
-      .post('/files/move_batch')
+      .post('/2/files/move_batch')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ entries: [ { from_path: "/nonexistantfolder", to_path: "/testfolder1" } ] })
@@ -1247,7 +1246,7 @@ describe('Folder batch operations', function(done)
       function(callback) 
       {
         request(server)
-          .post('/files/move_batch/check')
+          .post('/2/files/move_batch/check')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .send({ "async_job_id": async_job_id })
@@ -1287,7 +1286,7 @@ describe('Folder batch operations', function(done)
 
   it('batch job is no longer valid after failed', function(done) {
     request(server)
-      .post('/files/move_batch/check')
+      .post('/2/files/move_batch/check')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ "async_job_id": async_job_id })
@@ -1301,7 +1300,7 @@ describe('Folder batch operations', function(done)
 
   it('succeeds in copying folder tree', function(done) {
     request(server)
-      .post('/files/copy_batch')
+      .post('/2/files/copy_batch')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ "entries": [ { from_path: "/testfolder1", to_path: "/testfolder2" } ] })
@@ -1325,7 +1324,7 @@ describe('Folder batch operations', function(done)
       function(callback) 
       {
         request(server)
-          .post('/files/copy_batch/check')
+          .post('/2/files/copy_batch/check')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .send({ "async_job_id": async_job_id })
@@ -1369,7 +1368,7 @@ describe('Folder batch operations', function(done)
       if (entry.file)
       {
         request(server)
-          .post('/files/download')
+          .post('/2/files/download')
           .set('Accept', 'application/octet-stream')
           .set('Authorization', "Bearer " + testToken)
           .send({ "path": "/testfolder2/" + entry.file })
@@ -1383,7 +1382,7 @@ describe('Folder batch operations', function(done)
       else
       {
         request(server)
-          .post('/files/get_metadata')
+          .post('/2/files/get_metadata')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .send({ 'path': '/testfolder2' + entry.folder })
@@ -1408,7 +1407,7 @@ describe('Folder batch operations', function(done)
       if (entry.file)
       {
         request(server)
-          .post('/files/download')
+          .post('/2/files/download')
           .set('Accept', 'application/octet-stream')
           .set('Authorization', "Bearer " + testToken)
           .send({ "path": "/testfolder1/" + entry.file })
@@ -1422,7 +1421,7 @@ describe('Folder batch operations', function(done)
       else
       {
         request(server)
-          .post('/files/get_metadata')
+          .post('/2/files/get_metadata')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .send({ 'path': '/testfolder1' + entry.folder })
@@ -1443,7 +1442,7 @@ describe('Folder batch operations', function(done)
 
   it('succeeds in batch deleting folder tree', function(done) {
     request(server)
-      .post('/files/delete_batch')
+      .post('/2/files/delete_batch')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ "entries": [ { path: "/testfolder1" } ] })
@@ -1466,7 +1465,7 @@ describe('Folder batch operations', function(done)
       function(callback) 
       {
         request(server)
-          .post('/files/delete_batch/check')
+          .post('/2/files/delete_batch/check')
           .set('Accept', 'application/json')
           .set('Authorization', "Bearer " + testToken)
           .send({ "async_job_id": async_job_id })
@@ -1506,7 +1505,7 @@ describe('Folder batch operations', function(done)
 
   it('batch deleted folder tree not present', function(done) {
     request(server)
-      .post('/files/get_metadata')
+      .post('/2/files/get_metadata')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "/testfolder1" })
@@ -1519,7 +1518,7 @@ describe('Folder batch operations', function(done)
 
   after("Cleanup", function(done){
     request(server)
-      .post('/files/delete')
+      .post('/2/files/delete')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "/testfolder2" })
@@ -1534,7 +1533,7 @@ describe('Multipart upload', function() {
   var uploadId;
   it('succeeds in starting upload session', function(done) {
     request(server)
-      .post('/files/upload_session/start')
+      .post('/2/files/upload_session/start')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .set('Dropbox-API-Arg', '{ }')
@@ -1551,7 +1550,7 @@ describe('Multipart upload', function() {
   });
   it('succeeds in appending first part using append', function(done) {
     request(server)
-      .post('/files/upload_session/append')
+      .post('/2/files/upload_session/append')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .set('Dropbox-API-Arg', '{ "session_id": "' + uploadId + '", "offset": 15 }')
@@ -1560,7 +1559,7 @@ describe('Multipart upload', function() {
   });
   it('succeeds in appending second part using append_v2', function(done) {
     request(server)
-      .post('/files/upload_session/append_v2')
+      .post('/2/files/upload_session/append_v2')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .set('Dropbox-API-Arg', '{ "cursor": { "session_id": "' + uploadId + '", "offset": 35 } }')
@@ -1569,7 +1568,7 @@ describe('Multipart upload', function() {
   });
   it('succeeds in finishing upload', function(done) {
     request(server)
-      .post('/files/upload_session/finish')
+      .post('/2/files/upload_session/finish')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .set('Dropbox-API-Arg', '{ "cursor": { "session_id": "' + uploadId + '", "offset": 56 }, "commit": { "path": "target.txt" } }')
@@ -1585,7 +1584,7 @@ describe('Multipart upload', function() {
   });
   it('uploaded file has correct contents', function(done) {
     request(server)
-      .post('/files/download')
+      .post('/2/files/download')
       .set('Accept', 'application/octet-stream')
       .set('Authorization', "Bearer " + testToken)
       .set('Dropbox-API-Arg', '{ "path": "target.txt" }')
@@ -1597,7 +1596,7 @@ describe('Multipart upload', function() {
   });
   it('succeeds in deleting uploaded file', function(done) {
     request(server)
-      .post('/files/delete')
+      .post('/2/files/delete')
       .set('Accept', 'application/json')
       .set('Authorization', "Bearer " + testToken)
       .send({ path: "target.txt" })

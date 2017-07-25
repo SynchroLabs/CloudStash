@@ -125,7 +125,7 @@ module.exports = function(params, config)
                 }
             });
         },
-        listDirectory: function(user, dirPath, recursive, limit, cursor, callback)
+        listDirectory: function(user, dirPath, recursive, limit, cursor, callback) // !!! cursor is cursor item/entry
         {
             var entries = [];
 
