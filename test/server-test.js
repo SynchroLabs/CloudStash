@@ -118,18 +118,41 @@ describe('files/upload of foo.txt to root', function() {
   });
 });
 
-describe('/files/download of foo.txt', function() {
-  it('returns file contents', function(done) {
+describe('/files/download', function() {
+  it('succeeds and returns file contents for existing object foo.txt', function(done) {
     request(server)
       .post('/2/files/download')
       .set('Accept', 'application/octet-stream')
       .set('Authorization', "Bearer " + testToken)
       .set('Dropbox-API-Arg', '{ "path": "foo.txt" }')
       .expect('Content-Type', 'application/octet-stream')
+      .expect('Dropbox-API-Result', /.+/)
       .expect(function(res){
+           log.info("Headers:", res.headers);
+           assert(res);
+           assert(res.headers);
+           assert(res.headers["dropbox-api-result"]);
+           var entry = JSON.parse(res.headers["dropbox-api-result"]);
+           assert.equal(entry.name, "foo.txt");
+           assert(res.body);
            assert.equal(res.body.toString(), 'Foo is the word'); 
       })
       .expect(200, done);
+  });
+  it('fails for non-existant object', function(done) {
+    request(server)
+      .post('/2/files/download')
+      .set('Authorization', "Bearer " + testToken)
+      .set('Dropbox-API-Arg', '{ "path": "flarg" }')
+      .expect('Content-Type', /json/)
+      .expect(function(res){
+          assert(res.body);
+          assert(res.body.error);
+          assert.equal(res.body.error_summary, 'path/not_found'); 
+          assert.equal(res.body.error[".tag"], 'path'); 
+          assert.equal(res.body.error.path[".tag"], 'not_found'); 
+      })
+      .expect(409, done);
   });
 });
 

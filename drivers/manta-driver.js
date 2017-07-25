@@ -516,11 +516,10 @@ module.exports = function(params, config)
             {
                 if (err)
                 {
-                    // !!! Details?
                     log.error("Error getting metadata on getObject:", err);
                     callback(err);
                 }
-                else
+                else if (entry)
                 {
                     var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
@@ -528,7 +527,6 @@ module.exports = function(params, config)
                     {
                         if (err)
                         {
-                            log.error("Error getObject:", err);
                             if (err.code == 'ResourceNotFound')
                             {
                                 // Return null - file doesn't exist
@@ -540,9 +538,16 @@ module.exports = function(params, config)
                                 callback(err);
                             }
                         }
-
-                        callback(null, entry, stream);
+                        else
+                        {
+                            callback(null, entry, stream);
+                        }
                     });
+                }
+                else
+                {
+                    // Return null - file doesn't exist
+                    callback(null, null);
                 }
             });
         },
@@ -681,6 +686,105 @@ module.exports = function(params, config)
             var parentPath = path.dirname(filePath);
             var filename = path.basename(filePath);
 
+            var options = {};
+
+            // client.info returns info in the form:
+            //
+            // Directory
+            //
+            // { 
+            //     name: '000001',
+            //     extension: 'directory',
+            //     type: 'application/x-json-stream; type=directory',
+            //     headers: 
+            //     { 
+            //         'last-modified': 'Tue, 27 Jun 2017 01:04:48 GMT',
+            //         'content-type': 'application/x-json-stream; type=directory',
+            //         'result-set-size': '2',
+            //         'date': 'Tue, 25 Jul 2017 18:36:12 GMT',
+            //         'server': 'Manta',
+            //         'x-request-id': 'a0e73400-dc22-41d8-9b27-39a511d0fa37',
+            //         'x-response-time': '19',
+            //         'x-server-name': '4ff3f83e-23d3-49a0-986b-a6b0a881670b',
+            //         'connection': 'keep-alive',
+            //         'x-request-received': 1501007773169,
+            //         'x-request-processing-time': 529 
+            //     } 
+            // }
+            //
+            // File
+            //
+            // {
+            //     name: 'DicknsonDiploma.pdf',
+            //     extension: 'pdf',
+            //     type: 'application/pdf',
+            //     etag: 'cb7da3fd-d081-44e7-979e-a19f631ce17f',
+            //     md5: '3wBMj3NUx7fuggrYNmMhWQ==',
+            //     size: 321748,
+            //     headers: 
+            //     { 
+            //         'etag': 'cb7da3fd-d081-44e7-979e-a19f631ce17f',
+            //         'last-modified': 'Tue, 25 Jul 2017 02:43:24 GMT',
+            //         'durability-level': '2',
+            //         'content-length': '321748',
+            //         'content-md5': '3wBMj3NUx7fuggrYNmMhWQ==',
+            //         'content-type': 'application/pdf',
+            //         'date': 'Tue, 25 Jul 2017 18:39:16 GMT',
+            //         'server': 'Manta',
+            //         'x-request-id': 'f01f0bff-e311-4944-a483-0b672a706de9',
+            //         'x-response-time': '30',
+            //         'x-server-name': '60771e58-2ad0-4c50-8b23-86b72f9307f8',
+            //         'connection': 'keep-alive',
+            //         'x-request-received': 1501007956549,
+            //         'x-request-processing-time': 464 
+            //     } 
+            // }
+            //
+            client.info(filePath, options, function(err, info)
+            {
+                if (err)
+                {
+                    if (err.code == 'NotFoundError') // Why not "ResourceNotFound" like in download?
+                    {
+                        // Return null - file doesn't exist
+                        callback(null, null);
+                    }
+                    else
+                    {
+                        log.error("Error getting file metadata:", err);
+                        callback(err);
+                    }
+                }
+                else
+                {
+                    // Convert info to entry
+                    //
+                    var entry = { name: filename, parent: parentPath };
+
+                    if (info.extension === "directory")
+                    {
+                        entry["type"] = "directory";
+
+                    }
+                    else
+                    {
+                        entry["type"] = "object";
+                        entry["etag"] = info.etag;
+                        entry["size"] = info.size;
+                    }
+
+                    entry["mtime"] = new Date(info.headers["last-modified"]).toISOString();
+
+                    callback(null, getEntryDetails(user, entry));
+                }
+            });
+
+            // At one point we used "client.ls" (as commented out below) to get entry details, since it provided
+            // them in the exact same form as in a directory listing.  Using "client.info" returned the results in
+            // a different form, and among other things, did not include ms granularity in the last modified time.
+            // As it turns out, Dropbox doesn't even allow ms granularity on times, so we switched back to using
+            // "client.info" (above).  But here is the old "client.ls" code and notes in case we need it in future.
+            //
             // In a perfect world we should be able to specify a limit of 1 and "client.ls" should return one item.  The 
             // marker/limit logic in the Manta module "client.ls" method is kind of screwey in that it uses the passed-in
             // limit as the per-request limit for its own internal paging, thus when you get exactly "limit" items,
@@ -691,15 +795,13 @@ module.exports = function(params, config)
             //
             // !!! TODO: Open a bug against Node Manta for the above.
             //
+            /*
             var options = { marker: filename, limit: 3 };
 
-            var entry;
-
-            // We used to do a "client.info" on the object to get metadata, but the metadata returned doesn't
-            // match the metadata we get from "client.ls" (in particular, the mtime is not at ms granularity).
-            //
             client.ls(parentPath, options, function(err, res)
             {
+                var entry;
+
                 if (err)
                 {
                     callback(err);
@@ -725,30 +827,7 @@ module.exports = function(params, config)
                     });
                 }
             });
-        },
-        startMultipartUpload: function(user, callback)
-        {
-            // Multipart upload RFD - https://github.com/joyent/rfd/blob/master/rfd/0065/README.md
-            //
-            var tmpPath = path.posix.join(basePath, "temp0000"); 
-
-            var options = {
-                account: params.user
-            }
-
-            client.createUpload(tmpPath, options, function(err, uploadId)
-            {
-                if (err)
-                {
-                    log.error("Error on creatUpload", err);
-                    callback(err);
-                }
-                else
-                {
-                    log.info("createUpload id:", uploadId);
-                    callback(null, uploadId);
-                }
-            });
+            */
         }
     }
 

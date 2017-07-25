@@ -424,8 +424,6 @@ module.exports = function(params, config)
         },        
         getObject: function(user, filename, callback)
         {
-            var entry = getEntryDetails(user, filename);
-
             var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
             try
@@ -439,6 +437,7 @@ module.exports = function(params, config)
                 }
                 else
                 {
+                    var entry = getEntryDetails(user, filePath);
                     callback(null, entry, fs.createReadStream(filePath));
                 }
             }
