@@ -1,11 +1,14 @@
 <html>
    <head>
       <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>CloudStash Login</title>
       <link rel="stylesheet" href="/public/style.css">
    </head>
    <body>
-      <h1>Authorizing on behalf of app: {{client_id}}</h1>
+      <h1>CloudStash</h1>
+      <img src="/public/CloudFolder128.png"/>
+      <h2>Authorizing on behalf of app: {{client_id}}</h2>
       {{#if error}}<h2>Error: {{error}}</h2>{{/if}}
       <form action="" method="post" enctype="multipart/form-data">
          <input type="hidden" name="response_type" value="{{response_type}}"/>
@@ -19,9 +22,11 @@
          <input type="hidden" name="force_reauthentication" value="{{force_reauthentication}}"/>
          <fieldset>
             <label for="email">Email:</label>
-            <input type="email" id="email" name="email" placeholder="email address" />
+            <br/>
+            <input type="email" id="email" name="email" placeholder="email address" size="30" />
             <br />
             <label for="password">Password:</label>
+            <br />
             <input type="password" id="password" name="password" placeholder="password" />
             <br />
             <input type="submit" value="OK" />
