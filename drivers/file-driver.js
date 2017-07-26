@@ -55,27 +55,6 @@ module.exports = function(params, config)
         return item;
     }
 
-    function getEntrySortKey(entry)
-    {
-        return entry["server_modified"] + entry["path_display"];
-    }
-
-    function getCursorItem(entry)
-    {
-        var cursorItem = null;
-
-        if (entry)
-        {
-            cursorItem = 
-            {
-                "server_modified": entry["server_modified"],
-                "path_display": entry["path_display"]
-            }
-        }
-
-        return cursorItem;
-    }
-
     function toSafePath(filePath)
     {
         // path.posix.normalize will move any ../ to the front, and the regex will remove them.
@@ -107,10 +86,6 @@ module.exports = function(params, config)
     var driver = 
     {
         provider: "file",
-        isCursorItemNewer: function(item1, item2)
-        {
-            return (!item1 || (getEntrySortKey(item1) < getEntrySortKey(item2)));
-        },
         createDirectory: function(user, dirPath, callback)
         {
             var fullPath = toSafeLocalPath(user.account_id, user.app_id, dirPath); 
@@ -128,93 +103,7 @@ module.exports = function(params, config)
                 }
             });
         },
-        listDirectory: function(user, dirPath, recursive, limit, cursor, callback) // !!! cursor is cursor item/entry
-        {
-            var entries = [];
-
-            limit = limit || 999999;
-
-            var q = async.queue(function(task, done) 
-            {
-                var fullPath = toSafeLocalPath(user.account_id, user.app_id, task.dirpath);
-
-                fs.readdir(fullPath, function(err, files) 
-                {
-                    // If the error is 'not found' and the dir in question is the root dir, we're just
-                    // going to ignore that and return an empty dir lising (just means we haven't created
-                    // this user/app path yet because it hasn't been used yet).
-                    //
-                    if (err && ((err.code !== 'ENOENT') || (task.dirpath !== '')))
-                    {
-                        done(err);
-                    }
-                    else
-                    {
-                        if (files)
-                        {
-                            files.forEach(function(file)
-                            {
-                                var entry = getEntryDetails(user, path.posix.join(fullPath, file));
-                                log.debug("Entry", entry);
-
-                                // If there is a cursor, only process entries greater than the cursor
-                                //
-                                if (!cursor || (getEntrySortKey(cursor) < getEntrySortKey(entry)))
-                                {
-                                    // This will insert into "entries" such that "entries" will be/stay in sorted order
-                                    //
-                                    entries.splice(lodash.sortedIndexBy(entries, entry, function(o){ return getEntrySortKey(o); }), 0, entry);
-
-                                    // This will keep the list from growing beyond more than one over the limit (we purposely
-                                    // leave the "extra" entry so that at the end we will be able to see that we went past
-                                    // the limit).
-                                    //
-                                    if (entries.length > limit + 1)
-                                    {
-                                        entries.splice(limit + 1);
-                                    }
-                                }
-
-                                if (recursive && (entry[".tag"] == "folder"))
-                                {
-                                    q.push({ dirpath: path.posix.join(task.dirpath, entry.name) });
-                                }
-                            });
-                        }
-
-                        done();
-                    }
-                });
-            }, maxConcurrency);
-
-            q.error = lodash.once(function(err, task)
-            {
-                q.kill();
-                callback(err);
-            });
-
-            q.drain = function() 
-            {
-                var hasMore = false;
-                var cursorItem = cursor && cursor.lastItem;
-
-                if (entries.length > limit)
-                {
-                    entries.splice(limit);
-                    hasMore = true;
-                }
-
-                if (entries.length > 0)
-                {
-                    cursorItem = getCursorItem(entries[entries.length-1]);
-                }
-
-                callback(null, entries, hasMore, cursorItem);
-            };
-
-            q.push({ dirpath: dirPath });
-        },
-        traverseDirectory: function(user, dirPath, onEntry, callback)
+        traverseDirectory: function(user, dirPath, recursive, onEntry, callback)
         {
             var stopped = false;
 
@@ -246,7 +135,7 @@ module.exports = function(params, config)
                                     stopped = true;
                                     done();
                                 }
-                                else if (entry[".tag"] == "folder")
+                                else if (recursive && (entry[".tag"] == "folder"))
                                 {
                                     q.push({ dirpath: path.posix.join(task.dirpath, entry.name) });
                                 }
@@ -274,154 +163,6 @@ module.exports = function(params, config)
 
             q.push({ dirpath: dirPath });
         },
-        getLatestCursorItem: function(user, dirPath, recursive, callback)
-        {
-            var latestEntry;
-
-            var q = async.queue(function(task, done) 
-            {
-                var fullPath = toSafeLocalPath(user.account_id, user.app_id, task.dirpath);
-
-                fs.readdir(fullPath, function(err, files) 
-                {
-                    // If the error is 'not found' and the dir in question is the root dir, we're just
-                    // going to ignore that and return an empty dir lising (just means we haven't created
-                    // this user/app path yet because it hasn't been used yet).
-                    //
-                    if (err && ((err.code !== 'ENOENT') || (task.dirpath !== '')))
-                    {
-                        done(err);
-                    }
-                    else
-                    {
-                        if (files)
-                        {
-                            files.forEach(function(file)
-                            {
-                                var entry = getEntryDetails(user, path.posix.join(fullPath, file));
-                                log.debug("Entry", entry);
-
-                                if (!latestEntry)
-                                {
-                                    latestEntry = entry;
-                                }
-                                else
-                                {
-                                    var entrySortKey = getEntrySortKey(entry);
-                                    var latestEntrySortKey = getEntrySortKey(latestEntry);
-
-                                    if (entrySortKey > latestEntrySortKey)
-                                    {
-                                        latestEntry = entry;
-                                    }
-                                }
-
-                                if (recursive && (entry[".tag"] == "folder"))
-                                {
-                                    q.push({ dirpath: path.posix.join(task.dirpath, entry.name) });
-                                }
-                            });
-                        }
-
-                        done();
-                    }
-                });
-            }, maxConcurrency);
-
-            q.error = lodash.once(function(err, task)
-            {
-                q.kill();
-                callback(err);
-            });
-
-            q.drain = function() 
-            {
-                callback(null, getCursorItem(latestEntry));
-            };
-
-            q.push({ dirpath: dirPath });
-        },
-        findItems: function(user, dirPath, isMatch, start, limit, callback)
-        {
-            var entries = [];
-
-            var q = async.queue(function(task, done) 
-            {
-                var fullPath = toSafeLocalPath(user.account_id, user.app_id, task.dirpath);
-
-                fs.readdir(fullPath, function(err, files) 
-                {
-                    // If the error is 'not found' and the dir in question is the root dir, we're just
-                    // going to ignore that and return an empty dir lising (just means we haven't created
-                    // this user/app path yet because it hasn't been used yet).
-                    //
-                    if (err && ((err.code !== 'ENOENT') || (task.dirpath !== '')))
-                    {
-                        done(err);
-                    }
-                    else
-                    {
-                        if (files)
-                        {
-                            files.forEach(function(file)
-                            {
-                                var entry = getEntryDetails(user, path.posix.join(fullPath, file));
-                                log.debug("Find items evaluating entry", entry);
-
-                                if (isMatch(entry))
-                                {
-                                    // This will insert into "entries" such that "entries" will be/stay in sorted order
-                                    //
-                                    entries.splice(lodash.sortedIndexBy(entries, entry, function(o){ return getEntrySortKey(o); }), 0, entry);
-
-                                    // This will keep the list from growing beyond more than one over the limit (we purposely
-                                    // leave the "extra" entry so that at the end we will be able to see that we went past
-                                    // the limit).
-                                    //
-                                    if (entries.length > (start + limit + 1))
-                                    {
-                                        entries.splice(start + limit + 1);
-                                    }
-                                }
-
-                                if (entry[".tag"] == "folder")
-                                {
-                                    q.push({ dirpath: path.posix.join(task.dirpath, entry.name) });
-                                }
-                            });
-                        }
-
-                        done();
-                    }
-                });
-            }, maxConcurrency);
-
-            q.error = lodash.once(function(err, task)
-            {
-                q.kill();
-                callback(err);
-            });
-
-            q.drain = function() 
-            {
-                var hasMore = false;
-
-                if (entries.length > (start + limit))
-                {
-                    entries.splice(start + limit);
-                    hasMore = true;
-                }
-
-                if (start)
-                {
-                    entries.splice(0, start);
-                }
-
-                callback(null, entries, hasMore, start + entries.length);
-            };
-
-            q.push({ dirpath: dirPath });
-        },        
         getObject: function(user, filename, callback)
         {
             var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);

@@ -171,36 +171,18 @@ module.exports = function(params, config)
         return item;
     }
 
-    function getEntrySortKey(entry)
-    {
-        return entry["server_modified"] + entry["path_display"];
-    }
-
-    function getCursorItem(entry)
-    {
-        var cursorItem = null;
-
-        if (entry)
-        {
-            cursorItem = 
-            {
-                "server_modified": entry["server_modified"],
-                "path_display": entry["path_display"]
-            }
-        }
-
-        return cursorItem;
-    }
-
     log.debug('Manta client setup: %s', client.toString());
+
+    // !!! In a lot of cases, we have to query metadata for the result object in order to return
+    //     it.  But there are going to be cases (like bulk move/copy/delete) where we don't actually
+    //     need the entry details for the target.  We should take a bool param to all of these methods
+    //     indicating whether we want target entry details so that we can avoid the overhead when we 
+    //     don't need it.  All drivers.
+    //
 
     var driver = 
     {
         provider: "manta",
-        isCursorItemNewer: function(item1, item2)
-        {
-            return (!item1 || (getEntrySortKey(item1) < getEntrySortKey(item2)));
-        },
         createDirectory: function(user, dirPath, callback)
         {
             var fullPath = toSafeLocalPath(user.account_id, user.app_id, dirPath); 
@@ -213,18 +195,17 @@ module.exports = function(params, config)
                 }
                 else 
                 {
-                    // !!! Better entry details?  (query existing dir? - may have to wait)
+                    // !!! Better entry details (Dropbox isn't going to like this)
+                    //     Should get metadata on dir - may have to wait / retry
                     //
                     var entry = { type: "directory", name: dirPath };
                     callback(null, getEntryDetails(user, entry));
                 }
             });
         },
-        listDirectory: function(user, dirPath, recursive, limit, cursor, callback)
+        traverseDirectory: function(user, dirPath, recursive, onEntry, callback)
         {
-            var entries = [];
-
-            limit = limit || 999999;
+            var stopped = false;
 
             var q = async.queue(function(task, done) 
             {
@@ -235,8 +216,6 @@ module.exports = function(params, config)
                 //
                 //         https://github.com/joyent/node-manta/blob/master/lib/client.js
                 //
-                var options = {};
-
                 client.ls(fullPath, options, function(err, res)
                 {
                     if (err)
@@ -244,8 +223,8 @@ module.exports = function(params, config)
                         if ((err.name == 'NotFoundError') && (dirPath == ''))
                         {
                             // If the error is 'not found' and the dir in question is the root dir, we're just
-                            // going to ignore that and return an empty dir lising (just means we haven't created
-                            // this user/app path yet because it hasn't been used yet).
+                            // going to ignore that treat it like an empty dir lising (it just means we haven't
+                            // created this user/app path yet because it hasn't been used yet).
                             //
                             done();
                         }
@@ -258,30 +237,22 @@ module.exports = function(params, config)
                     {
                         res.on('entry', function(item)
                         {
-                            var entry = getEntryDetails(user, item);
-                            log.debug("Entry", entry);
-
-                            // If there is a cursor, only process entries greater than the cursor
-                            //
-                            if (!cursor || (getEntrySortKey(cursor) < getEntrySortKey(entry)))
+                            if (!stopped)
                             {
-                                // This will insert into "entries" such that "entries" will be/stay in sorted order
-                                //
-                                entries.splice(lodash.sortedIndexBy(entries, entry, function(o){ return getEntrySortKey(o); }), 0, entry);
+                                var entry = getEntryDetails(user, item);
+                                log.debug("Entry", entry);
 
-                                // This will keep the list from growing beyond more than one over the limit (we purposely
-                                // leave the "extra" entry so that at the end we will be able to see that we went past
-                                // the limit).
-                                //
-                                if (entries.length > limit + 1)
+                                if (onEntry(entry))
                                 {
-                                    entries.splice(limit + 1);
+                                    // !!! It would be great if we could tell Manta to stop (since we're done)
+                                    //
+                                    stopped = true;
+                                    done();
                                 }
-                            }
-
-                            if (recursive && (entry[".tag"] == "folder"))
-                            {
-                                q.push({ dirpath: path.posix.join(task.dirpath, entry.name) });
+                                else if (recursive && (entry[".tag"] == "folder"))
+                                {
+                                    q.push({ dirpath: path.posix.join(task.dirpath, entry.name) });
+                                }
                             }
                         });
 
@@ -293,7 +264,10 @@ module.exports = function(params, config)
 
                         res.once('end', function () 
                         {
-                            done();
+                            if (!stopped)
+                            {
+                                done();
+                            }
                         });
                     }
                 });
@@ -307,207 +281,11 @@ module.exports = function(params, config)
 
             q.drain = function() 
             {
-                var hasMore = false;
-                var cursorItem = cursor && cursor.lastItem;
-
-                if (entries.length > limit)
-                {
-                    entries.splice(limit);
-                    hasMore = true;
-                }
-
-                if (entries.length > 0)
-                {
-                    cursorItem = getCursorItem(entries[entries.length-1]);
-                }
-
-                callback(null, entries, hasMore, cursorItem);
+                callback(null, stopped);
             };
 
             q.push({ dirpath: dirPath });
         },
-        getLatestCursorItem: function(user, dirPath, recursive, callback)
-        {
-            var latestEntry;
-
-            var q = async.queue(function(task, done) 
-            {
-                var fullPath = toSafeLocalPath(user.account_id, user.app_id, task.dirpath);
-
-                // !!! See comment in listDirecory (above) re paging results.
-                //
-                var options = {};
-
-                client.ls(fullPath, options, function(err, res)
-                {
-                    if (err)
-                    {
-                        if ((err.code == 'NOTFOUND') && (dirPath == ''))
-                        {
-                            // If the error is 'not found' and the dir in question is the root dir, we're just
-                            // going to ignore that and return an empty dir lising (just means we haven't created
-                            // this user/app path yet because it hasn't been used yet).
-                            //
-                            done();
-                        }
-                        else
-                        {
-                            done(err);
-                        }
-                    }
-                    else
-                    {
-                        res.on('entry', function(item)
-                        {
-                            var entry = getEntryDetails(user, item);
-                            log.debug("Entry", entry);
-
-                            if (!latestEntry)
-                            {
-                                latestEntry = entry;
-                            }
-                            else
-                            {
-                                var entrySortKey = getEntrySortKey(entry);
-                                var latestEntrySortKey = getEntrySortKey(latestEntry);
-
-                                if (entrySortKey > latestEntrySortKey)
-                                {
-                                    latestEntry = entry;
-                                }
-                            }
-
-                            if (recursive && (entry[".tag"] == "folder"))
-                            {
-                                q.push({ dirpath: path.posix.join(task.dirpath, entry.name) });
-                            }
-                        });
-
-                        res.once('error', function (err) 
-                        {
-                            log.error(err);
-                            done(err);
-                        });
-
-                        res.once('end', function () 
-                        {
-                            done();
-                        });
-                    }
-                });
-            }, maxConcurrency);
-
-            q.error = lodash.once(function(err, task)
-            {
-                q.kill();
-                callback(err);
-            });
-
-            q.drain = function() 
-            {
-                callback(null, getCursorItem(latestEntry));
-            };
-
-            q.push({ dirpath: dirPath });
-        },
-        findItems: function(user, dirPath, isMatch, start, limit, callback)
-        {
-            var entries = [];
-
-            var q = async.queue(function(task, done) 
-            {
-                var fullPath = toSafeLocalPath(user.account_id, user.app_id, task.dirpath);
-
-                // !!! See comment in listDirecory (above) re paging results.
-                //
-                var options = {};
-
-                client.ls(fullPath, options, function(err, res)
-                {
-                    if (err)
-                    {
-                        if ((err.code == 'NOTFOUND') && (dirPath == ''))
-                        {
-                            // If the error is 'not found' and the dir in question is the root dir, we're just
-                            // going to ignore that and return an empty dir lising (just means we haven't created
-                            // this user/app path yet because it hasn't been used yet).
-                            //
-                            done();
-                        }
-                        else
-                        {
-                            done(err);
-                        }
-                    }
-                    else
-                    {
-                        res.on('entry', function(item)
-                        {
-                            var entry = getEntryDetails(user, item);
-                            log.debug("Find items evaluating entry", entry);
-
-                            if (isMatch(entry))
-                            {
-                                // This will insert into "entries" such that "entries" will be/stay in sorted order
-                                //
-                                entries.splice(lodash.sortedIndexBy(entries, entry, function(o){ return getEntrySortKey(o); }), 0, entry);
-
-                                // This will keep the list from growing beyond more than one over the limit (we purposely
-                                // leave the "extra" entry so that at the end we will be able to see that we went past
-                                // the limit).
-                                //
-                                if (entries.length > (start + limit + 1))
-                                {
-                                    entries.splice(start + limit + 1);
-                                }
-                            }
-
-                            if (entry[".tag"] == "folder")
-                            {
-                                q.push({ dirpath: path.posix.join(task.dirpath, entry.name) });
-                            }
-                        });
-
-                        res.once('error', function (err) 
-                        {
-                            log.error(err);
-                            done(err);
-                        });
-
-                        res.once('end', function () 
-                        {
-                            done();
-                        });
-                    }
-                });
-            }, maxConcurrency);
-
-            q.error = lodash.once(function(err, task)
-            {
-                q.kill();
-                callback(err);
-            });
-
-            q.drain = function() 
-            {
-                var hasMore = false;
-
-                if (entries.length > (start + limit))
-                {
-                    entries.splice(start + limit);
-                    hasMore = true;
-                }
-
-                if (start)
-                {
-                    entries.splice(0, start);
-                }
-
-                callback(null, entries, hasMore, start + entries.length);
-            };
-
-            q.push({ dirpath: dirPath });
-        },        
         getObject: function(user, filename, callback)
         {
             // !!! We need to return metadata with the stream, which requires a separate Manta call
@@ -647,9 +425,6 @@ module.exports = function(params, config)
         },
         deleteObject: function(user, filename, callback)
         {
-            // !!! This will remove a single file or an empty directory only (need to implement support for deleting
-            //     non-empty directory).
-            //
             var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
             client.info(filePath, function(err, info) 
@@ -691,7 +466,6 @@ module.exports = function(params, config)
             // client.info returns info in the form:
             //
             // Directory
-            //
             // { 
             //     name: '000001',
             //     extension: 'directory',
@@ -713,7 +487,6 @@ module.exports = function(params, config)
             // }
             //
             // File
-            //
             // {
             //     name: 'DicknsonDiploma.pdf',
             //     extension: 'pdf',

@@ -7,21 +7,26 @@ to significant optimizations.
 
 All drivers must implement:
 
-    getObjectMetaData (get entry details for given file or folder)
-    listDirectory (non-recursive, return all file and folder entries for a given parent)
+    traverseDirectory: function(user, dirPath, recursive, onEntry, callback)
 
-The server is capable of using getObjectMetaData and listDirectory to handle all cursor-based processing
-using brute force.  But the server will introspect the driver to see if it implements optimized cursor processing,
-and if so, it will use those methods.  The optimized cursor processing functions are:
+The server is capable of using traverseDirectory to handle all cursor-based processing using brute force.
+But the server will introspect the driver to see if it implements optimized cursor processing, and if so, 
+it will use those methods.  The optimized cursor processing functions are:
 
-    listFolderUsingCursor - /files/list_folder + /files/list_folder/continue
-    getLatestCursorItem - /files/list_folder/get_latest_cursor
-    isAnyCursorItemNewer - /files/list_folder/longpoll
+    listFolderUsingCursor: function(user, dirPath, recursive, limit, cursorItem, callback)
+    getLatestCursorItem: function(user, path, recursive, callback)
+    isAnyCursorItemNewer: function(user, path, recursive, cursorItem, callback)
 
-There could also be a fallback progression here.  For example, if a driver didn't implement isAnyCursorItemNewer,
-but did implement getLatestCursorItem, /files/list_folder/longpoll could just use that to get the latest cursor
-item and see if that one is newer.  Similarly, if a driver didn't implement getLatestCursorItem, but did implement
-listFolderUsingCursor, /files/list_folder/get_latest_cursor could use listFoldersUsingCursor and use the last 
+If the driver has additional information (or a different natural order than mtime+name), it may implement
+its own cursor packaging and comparison functions:
+
+    getEntrySortKey: function(entry)
+    getCursorItem: function(entry)
+
+There is a fallback progression here.  For example, if a driver doesn't implement isAnyCursorItemNewer,
+but does implement getLatestCursorItem, /files/list_folder/longpoll will just use that to get the latest cursor
+item and see if that one is newer.  Similarly, if a driver doesn't implement getLatestCursorItem, but does implement
+listFolderUsingCursor, /files/list_folder/get_latest_cursor will call listFoldersUsingCursor and use the last 
 entry returned.  The assumption here is that any implemented method is a significant improvement over brute
 force traversal, so it should be preferred.
 
