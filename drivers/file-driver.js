@@ -9,8 +9,6 @@ var async = require('async');
 
 var lodash = require('lodash');
 
-var uuidv4 = require('uuid/v4');
-
 var log = require('./../lib/logger').getLogger("file-driver");
 
 module.exports = function(params, config)
@@ -277,117 +275,6 @@ module.exports = function(params, config)
                 }
             }
         },
-        startMultipartUpload: function(user, callback)
-        {
-            // File name convention:
-            //
-            //    <user>/uploads/<uuid>/<offset>.bin 
-            //
-            var uploadId = uuidv4();
-
-            var uploadPath = toSafeLocalPath(user.account_id, null, path.join("uploads", uploadId, "0.bin"));
-
-            fs.ensureDir(path.dirname(uploadPath), function(err)
-            {
-                if (err)
-                {
-                    callback(err);
-                }
-                else
-                {
-                    callback(null, uploadId, fs.createWriteStream(uploadPath));
-                }
-            });
-        },
-        multipartUpload: function(user, uploadId, offset, callback)
-        {
-            var uploadPath = toSafeLocalPath(user.account_id, null, path.join("uploads", uploadId, offset.toString() + ".bin"));
-            callback(null, fs.createWriteStream(uploadPath));
-        },
-        finishMultipartUpload: function(user, uploadId, filename, callback)
-        {
-            var uploadDirPath = toSafeLocalPath(user.account_id, null, path.join("uploads", uploadId));
-            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename); 
-
-            log.info("Processing finishMultipartUpload for upload '%s', writing to dest: %s", uploadId, filename);
-
-            // Process uploaded file segments
-            //
-            fs.readdir(uploadDirPath, function(err, files) 
-            {
-                if (err)
-                {
-                    callback(err);
-                }
-                else if (!files)
-                {
-                    callback(new Error("No files uploaded with the id:", uploadId));
-                }
-                else
-                {
-                    var entries = [];
-
-                    // Get the detailed info for uploaded file segments
-                    //
-                    files.forEach(function(file)
-                    {
-                        var entry = getEntryDetails(user, path.posix.join(uploadDirPath, file));
-                        entry.offset = parseInt(path.parse(entry.name).name);
-                        entries.push(entry);
-                    });
-
-                    // Sort entries by offset
-                    //
-                    entries.sort(function(a, b)
-                    {
-                        return a.offset - b.offset;
-                    });
-
-                    log.info("Entries", entries);
-
-                    // !!! Verify that we start at 0 and there are no holes
-                    //
-
-                    // Stream the files in order to destination file
-                    //
-                    fs.ensureDir(path.dirname(filePath), function(err)
-                    {
-                        if (err)
-                        {
-                            callback(new Error("Unable to create dir for uploaded file"));
-                            return;
-                        }
-
-                        var writeStream = fs.createWriteStream(filePath);
-                        async.eachSeries(entries, function (entry, callback) 
-                        {
-                            var currentFile = path.join(uploadDirPath, entry.name);
-                            var stream = fs.createReadStream(currentFile).on('end', function () 
-                            {
-                                callback();
-                            });
-                            stream.pipe(writeStream, { end: false });
-                        }, 
-                        function(err)
-                        {
-                            writeStream.end();
-
-                            fs.remove(uploadDirPath, function(err)
-                            {
-                                if (err)
-                                {
-                                    log.error("Failed to delete upload path for uploadID:", uploadId);
-                                }
-
-                                // Return details about newly created file
-                                //
-                                callback(null, getEntryDetails(user, filePath));
-                            });
-                        });
-                    });
-                }
-            });
-        }
     }
 
     return driver;

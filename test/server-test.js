@@ -1569,9 +1569,6 @@ describe('Folder batch operations', function(done)
   });
 });
 
-//
-// !!! Only if file driver (not implemented in Manta yet)
-//
 describe('Multipart upload', function() {
   var uploadId;
   it('succeeds in starting upload session', function(done) {
