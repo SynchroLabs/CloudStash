@@ -90,15 +90,7 @@ module.exports = function(params, config)
 
             fs.mkdirs(fullPath, function(err)
             {
-                if (err)
-                {
-                    callback(err);
-                }
-                else
-                {
-                    var entry = getEntryDetails(user, fullPath);
-                    callback(err, entry);
-                }
+                callback(err);
             });
         },
         traverseDirectory: function(user, dirPath, recursive, onEntry, callback)
@@ -176,8 +168,7 @@ module.exports = function(params, config)
                 }
                 else
                 {
-                    var entry = getEntryDetails(user, filePath);
-                    callback(null, entry, fs.createReadStream(filePath));
+                    callback(null, fs.createReadStream(filePath));
                 }
             }
             catch (err)
@@ -215,14 +206,7 @@ module.exports = function(params, config)
             
             fs.copy(filePath, newFilePath, function(err) // Creates directories as needed
             {
-                if (err)
-                {
-                    callback(err);
-                }
-                else
-                {
-                    callback(err, getEntryDetails(user, newFilePath));
-                }
+                callback(err);
             });
         },
         moveObject: function(user, filename, newFilename, callback)
@@ -232,35 +216,24 @@ module.exports = function(params, config)
 
             fs.move(filePath, newFilePath, function(err) // Creates directories as needed
             {
-                if (err)
-                {
-                    callback(err);
-                }
-                else
-                {
-                    callback(err, getEntryDetails(user, newFilePath));
-                }
+                callback(err);
             });
         },
         deleteObject: function(user, filename, callback)
         {
-            // This will remove a file or a directory, so let's hope it's used correctly
-            //
             var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
-
-            var entry = getEntryDetails(user, filePath);
 
             fs.remove(filePath, function(err)
             {
-                callback(err, entry)
+                callback(err)
             });
         },
         getObjectMetaData: function(user, filename, callback)
         {
+            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
+
             try
             {
-                log.info("getObjectMetaData for path:", filename);
-                var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
                 callback(null, getEntryDetails(user, filePath));
             }
             catch (err)

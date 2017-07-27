@@ -173,13 +173,6 @@ module.exports = function(params, config)
 
     log.debug('Manta client setup: %s', client.toString());
 
-    // !!! In a lot of cases, we have to query metadata for the result object in order to return
-    //     it.  But there are going to be cases (like bulk move/copy/delete) where we don't actually
-    //     need the entry details for the target.  We should take a bool param to all of these methods
-    //     indicating whether we want target entry details so that we can avoid the overhead when we 
-    //     don't need it.  All drivers.
-    //
-
     var driver = 
     {
         provider: "manta",
@@ -189,18 +182,7 @@ module.exports = function(params, config)
 
             client.mkdirp(fullPath, function(err)
             {
-                if (err)
-                {
-                    callback(err);
-                }
-                else 
-                {
-                    // !!! Better entry details (Dropbox isn't going to like this)
-                    //     Should get metadata on dir - may have to wait / retry
-                    //
-                    var entry = { type: "directory", name: dirPath };
-                    callback(null, getEntryDetails(user, entry));
-                }
+                callback(err);
             });
         },
         traverseDirectory: function(user, dirPath, recursive, onEntry, callback)
@@ -288,44 +270,26 @@ module.exports = function(params, config)
         },
         getObject: function(user, filename, callback)
         {
-            // !!! We need to return metadata with the stream, which requires a separate Manta call
-            //
-            this.getObjectMetaData(user, filename, function(err, entry)
+            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
+
+            client.get(filePath, function(err, stream)
             {
                 if (err)
                 {
-                    log.error("Error getting metadata on getObject:", err);
-                    callback(err);
-                }
-                else if (entry)
-                {
-                    var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
-
-                    client.get(filePath, function(err, stream)
+                    if (err.code == 'ResourceNotFound')
                     {
-                        if (err)
-                        {
-                            if (err.code == 'ResourceNotFound')
-                            {
-                                // Return null - file doesn't exist
-                                callback(null, null);
-                            }
-                            else
-                            {
-                                log.error(err);
-                                callback(err);
-                            }
-                        }
-                        else
-                        {
-                            callback(null, entry, stream);
-                        }
-                    });
+                        // Return null - file doesn't exist
+                        callback(null, null);
+                    }
+                    else
+                    {
+                        log.error(err);
+                        callback(err);
+                    }
                 }
                 else
                 {
-                    // Return null - file doesn't exist
-                    callback(null, null);
+                    callback(null, stream);
                 }
             });
         },
@@ -363,19 +327,7 @@ module.exports = function(params, config)
                 {
                     client.ln(filePath, newFilePath, function(err) 
                     {
-                        if (err)
-                        {
-                            callback(err);
-                        }
-                        else
-                        {
-                            // !!! Better entry details?  
-                            //
-                            //        Get info on new obj after copy (may have to wait for it to show up)?
-                            //
-                            var entry = { type: "object", name: newFilename };
-                            callback(null, getEntryDetails(user, entry));
-                        }
+                        callback(err);
                     });
                 }
             });
@@ -403,20 +355,7 @@ module.exports = function(params, config)
                         {
                             client.unlink(filePath, function(err)
                             {
-                                if (err)
-                                {
-                                    callback(err);
-                                }
-                                else
-                                {
-                                    // !!! Better entry details?  
-                                    //
-                                    //        Query source obj before move?
-                                    //        Get info on obj after move (may have to wait for it to show up)?
-                                    //
-                                    var entry = { type: "object", name: newFilename };
-                                    callback(null, getEntryDetails(user, entry));
-                                }
+                                callback(err);
                             });
                         }
                     });
@@ -427,31 +366,9 @@ module.exports = function(params, config)
         {
             var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
-            client.info(filePath, function(err, info) 
+            client.unlink(filePath, function(err)
             {
-                if (err) 
-                {
-                    callback(err);
-                }
-                else 
-                {
-                    log.info("Got entry info on delete:", info);
-
-                    var entry = { name: filename };
-                    entry.type = (info.extension == "directory") ? "directory" : "object";
-
-                    client.unlink(filePath, function(err)
-                    {
-                        if (err) 
-                        {
-                            callback(err);
-                        }
-                        else 
-                        {
-                            callback(null, getEntryDetails(user, entry));
-                        }
-                    });
-                }
+                callback(err);
             });
         },
         getObjectMetaData: function(user, filename, callback)
