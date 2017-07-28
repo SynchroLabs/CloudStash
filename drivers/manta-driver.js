@@ -145,7 +145,14 @@ module.exports = function(params, config)
         */
 
         var fullpath = path.posix.join(mantaEntry.parent, mantaEntry.name);
-        var displayPath = "/" + path.relative(path.posix.join(basePath, user.account_id, user.app_id), fullpath);
+
+        var userPath = path.posix.join(basePath, user.account_id);
+        if (user.app_id)
+        {
+            userPath = path.posix.join(userPath, user.app_id);
+        } 
+
+        var displayPath = "/" + path.relative(userPath, fullpath);
 
         // Convert to Dropbox form
         //
@@ -198,6 +205,7 @@ module.exports = function(params, config)
                 //
                 //         https://github.com/joyent/node-manta/blob/master/lib/client.js
                 //
+                var options = {};
                 client.ls(fullPath, options, function(err, res)
                 {
                     if (err)
@@ -221,6 +229,7 @@ module.exports = function(params, config)
                         {
                             if (!stopped)
                             {
+                                log.info("Traverse got item:", item);
                                 var entry = getEntryDetails(user, item);
                                 log.debug("Entry", entry);
 
