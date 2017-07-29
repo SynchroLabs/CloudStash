@@ -281,7 +281,7 @@ module.exports = function(params, config)
         {
             var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
-            client.get(filePath, function(err, stream)
+            client.get(filePath, function(err, stream, res)
             {
                 if (err)
                 {
@@ -298,7 +298,7 @@ module.exports = function(params, config)
                 }
                 else
                 {
-                    callback(null, stream);
+                    callback(null, stream, res.headers);
                 }
             });
         },
