@@ -2,6 +2,7 @@ var request = require('supertest');
 var assert = require('assert');
 
 var async = require('async');
+var fs = require('fs');
 
 var jwt = require('jsonwebtoken');
 
@@ -61,11 +62,23 @@ var testToken = jwt.sign(testAccount, _testSecret + "authToken");
 //
 // !!! Test download of non-existent file (I think it times out)
 //
-// !!! Test upload/download of binary files to make sure we don't have any encoding weirdness
-//
 
 // Tests below assume starting with a 1234-BEEF/TEST01 that is empty (and if successful, will leave it empty)
 //
+
+function areBuffersEqual(a, b) 
+{
+    if (!Buffer.isBuffer(a)) return undefined;
+    if (!Buffer.isBuffer(b)) return undefined;
+    if (typeof a.equals === 'function') return a.equals(b);
+    if (a.length !== b.length) return false;
+    
+    for (var i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false;
+    }
+    
+    return true;
+};
 
 describe('CloudStash', function() {
 
@@ -149,17 +162,16 @@ describe('CloudStash', function() {
         .set('Accept', 'application/octet-stream')
         .set('Authorization', "Bearer " + testToken)
         .set('Dropbox-API-Arg', '{ "path": "foo.txt" }')
-        .expect('Content-Type', 'application/octet-stream')
+        .expect('Content-Type', 'text/plain')
         .expect('Dropbox-API-Result', /.+/)
         .expect(function(res){
-             log.info("Headers:", res.headers);
              assert(res);
              assert(res.headers);
              assert(res.headers["dropbox-api-result"]);
              var entry = JSON.parse(res.headers["dropbox-api-result"]);
              assert.equal(entry.name, "foo.txt");
              assert(res.body);
-             assert.equal(res.body.toString(), 'Foo is the word'); 
+             assert.equal(res.text, 'Foo is the word'); 
         })
         .expect(200, done);
     });
@@ -178,6 +190,55 @@ describe('CloudStash', function() {
         })
         .expect(409, done);
     });
+  });
+
+  describe('upload and download of binary file', function(){
+    var buf = fs.readFileSync('./test/files/CloudFolder.png');
+    it('succeeds in uploading file', function(done) {
+      request(server)
+        .post('/2/files/upload')
+        .set('Accept', 'application/json')
+        .set('Authorization', "Bearer " + testToken)
+        .set('Dropbox-API-Arg', '{ "path": "/CloudFolder.png" }')
+        .send(buf)
+        .expect('Content-Type', /json/)
+        .expect(function(res){
+            assert(res.body);
+            assert.equal(res.body[".tag"], 'file'); 
+            assert.equal(res.body.name, 'CloudFolder.png'); // !!! Check size, etc
+        })
+        .expect(200, done);
+    });
+    it('returns file contents', function(done) {
+      request(server)
+        .post('/2/files/download')
+        .set('Authorization', "Bearer " + testToken)
+        .set('Dropbox-API-Arg', '{ "path": "/CloudFolder.png" }')
+        .expect('Content-Type', 'image/png')
+        .expect('Dropbox-API-Result', /.+/)
+        .expect(function(res){
+             log.info("Res:", res);
+             assert(res);
+             assert(res.headers);
+             assert(res.headers["dropbox-api-result"]);
+             var entry = JSON.parse(res.headers["dropbox-api-result"]);
+             assert.equal(entry.name, "CloudFolder.png");
+             assert(res.body);
+             assert(areBuffersEqual(res.body, buf)); 
+        })
+        .expect(200, done);
+    });
+    after("Clean up folder contents", function(done)
+    {
+      request(server)
+        .post('/2/files/delete')
+        .set('Accept', 'application/json')
+        .set('Authorization', "Bearer " + testToken)
+        .send({ path: "/CloudFolder.png" })
+        .expect('Content-Type', /json/)
+        .expect(200, done);
+    });
+
   });
 
   describe('/files/create_folder of test_folder', function() {
@@ -311,9 +372,9 @@ describe('CloudStash', function() {
         .set('Accept', 'application/octet-stream')
         .set('Authorization', "Bearer " + testToken)
         .set('Dropbox-API-Arg', '{ "path": "/test_folder/bar.txt" }')
-        .expect('Content-Type', 'application/octet-stream')
+        .expect('Content-Type', 'text/plain')
         .expect(function(res){
-             assert.equal(res.body.toString(), 'Foo is the word'); 
+             assert.equal(res.text, 'Foo is the word'); 
         })
         .expect(200, done);
     });
@@ -460,9 +521,9 @@ describe('CloudStash', function() {
         .set('Accept', 'application/octet-stream')
         .set('Authorization', "Bearer " + testToken)
         .set('Dropbox-API-Arg', '{ "path": "baz.txt" }')
-        .expect('Content-Type', 'application/octet-stream')
+        .expect('Content-Type', 'text/plain')
         .expect(function(res){
-             assert.equal(res.body.toString(), 'Foo is the word'); 
+             assert.equal(res.text, 'Foo is the word'); 
         })
         .expect(200, done);
     });
@@ -952,9 +1013,9 @@ describe('CloudStash', function() {
             .set('Authorization', "Bearer " + testToken)
             .send({ "path": "/testfolder1/" + entry.file })
             .set('Dropbox-API-Arg', '{ "path": "/testfolder1' + entry.file + '" }')
-            .expect('Content-Type', 'application/octet-stream')
+            .expect('Content-Type', 'text/plain')
             .expect(function(res){
-                 assert.equal(res.body.toString(), entry.contents); 
+                 assert.equal(res.text, entry.contents); 
             })
             .expect(200, callback);
         }
@@ -1021,9 +1082,9 @@ describe('CloudStash', function() {
             .set('Authorization', "Bearer " + testToken)
             .send({ "path": "/testfolder2/" + entry.file })
             .set('Dropbox-API-Arg', '{ "path": "/testfolder2' + entry.file + '" }')
-            .expect('Content-Type', 'application/octet-stream')
+            .expect('Content-Type', 'text/plain')
             .expect(function(res){
-                 assert.equal(res.body.toString(), entry.contents); 
+                 assert.equal(res.text, entry.contents); 
             })
             .expect(200, callback);
         }
@@ -1061,9 +1122,9 @@ describe('CloudStash', function() {
             .set('Authorization', "Bearer " + testToken)
             .send({ "path": "/testfolder1/" + entry.file })
             .set('Dropbox-API-Arg', '{ "path": "/testfolder1' + entry.file + '" }')
-            .expect('Content-Type', 'application/octet-stream')
+            .expect('Content-Type', 'text/plain')
             .expect(function(res){
-                 assert.equal(res.body.toString(), entry.contents); 
+                 assert.equal(res.text, entry.contents); 
             })
             .expect(200, callback);
         }
@@ -1246,9 +1307,9 @@ describe('CloudStash', function() {
             .set('Authorization', "Bearer " + testToken)
             .send({ "path": "/testfolder1/" + entry.file })
             .set('Dropbox-API-Arg', '{ "path": "/testfolder1' + entry.file + '" }')
-            .expect('Content-Type', 'application/octet-stream')
+            .expect('Content-Type', 'text/plain')
             .expect(function(res){
-                 assert.equal(res.body.toString(), entry.contents); 
+                 assert.equal(res.text, entry.contents); 
             })
             .expect(200, callback);
         }
@@ -1451,9 +1512,9 @@ describe('CloudStash', function() {
             .set('Authorization', "Bearer " + testToken)
             .send({ "path": "/testfolder2/" + entry.file })
             .set('Dropbox-API-Arg', '{ "path": "/testfolder2' + entry.file + '" }')
-            .expect('Content-Type', 'application/octet-stream')
+            .expect('Content-Type', 'text/plain')
             .expect(function(res){
-                 assert.equal(res.body.toString(), entry.contents); 
+                 assert.equal(res.text, entry.contents); 
             })
             .expect(200, callback);
         }
@@ -1490,9 +1551,9 @@ describe('CloudStash', function() {
             .set('Authorization', "Bearer " + testToken)
             .send({ "path": "/testfolder1/" + entry.file })
             .set('Dropbox-API-Arg', '{ "path": "/testfolder1' + entry.file + '" }')
-            .expect('Content-Type', 'application/octet-stream')
+            .expect('Content-Type', 'text/plain')
             .expect(function(res){
-                 assert.equal(res.body.toString(), entry.contents); 
+                 assert.equal(res.text, entry.contents); 
             })
             .expect(200, callback);
         }
@@ -1665,9 +1726,9 @@ describe('CloudStash', function() {
         .set('Accept', 'application/octet-stream')
         .set('Authorization', "Bearer " + testToken)
         .set('Dropbox-API-Arg', '{ "path": "target.txt" }')
-        .expect('Content-Type', 'application/octet-stream')
+        .expect('Content-Type', 'text/plain')
         .expect(function(res){
-             assert.equal(res.body.toString(), 'Foo is the wordBar is the next wordBaz is the third wordFraz is the final word'); 
+             assert.equal(res.text, 'Foo is the wordBar is the next wordBaz is the third wordFraz is the final word'); 
         })
         .expect(200, done);
     });

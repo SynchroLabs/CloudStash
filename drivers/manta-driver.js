@@ -53,6 +53,7 @@ var path = require('path');
 var async = require('async');
 
 var lodash = require('lodash');
+var mimeTypes = require('mime-types');
 
 var manta = require('manta');
 
@@ -277,11 +278,26 @@ module.exports = function(params, config)
 
             q.push({ dirpath: dirPath });
         },
-        getObject: function(user, filename, callback)
+        getObject: function(user, filename, requestHeaders, callback)
         {
+            // requestHeaders is optional
+            //
+            if (typeof callback === 'undefined')
+            {
+                callback = requestHeaders;
+                requestHeaders = null;
+            }
+
             var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
-            client.get(filePath, function(err, stream, res)
+            if (headers)
+            {
+                log.info("getObject got headers:", headers);
+            }
+
+            var options = { headers: lodash.pick(headers, ['if-modified-since', 'if-none-match', 'range']) };
+
+            client.get(filePath, options, function(err, stream, res)
             {
                 if (err)
                 {
@@ -298,7 +314,7 @@ module.exports = function(params, config)
                 }
                 else
                 {
-                    callback(null, stream, res.headers);
+                    callback(null, stream, res.statusCode, res.statusMessage, res.headers);
                 }
             });
         },
@@ -314,9 +330,8 @@ module.exports = function(params, config)
                 }
                 else
                 {
-                    // !!! Do we have to do anything special to overwrite existing file?
-                    //
-                    var options = {};
+                    // Set the Content-Type from the filename
+                    var opts = { type: mimeTypes.lookup(filePath) || 'application/octet-stream' };
                     callback(null, client.createWriteStream(filePath, options));
                 }
             });

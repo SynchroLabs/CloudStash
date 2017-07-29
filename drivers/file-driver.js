@@ -8,6 +8,8 @@ var path = require('path');
 var async = require('async');
 
 var lodash = require('lodash');
+var md5File = require('md5-file');
+var mimeTypes = require('mime-types');
 
 var log = require('./../lib/logger').getLogger("file-driver");
 
@@ -153,9 +155,33 @@ module.exports = function(params, config)
 
             q.push({ dirpath: dirPath });
         },
-        getObject: function(user, filename, callback)
+        getObject: function(user, filename, requestHeaders, callback)
         {
+            // requestHeaders is optional
+            //
+            if (typeof callback === 'undefined')
+            {
+                callback = requestHeaders;
+                requestHeaders = null;
+            }
+
             var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
+
+            if (requestHeaders)
+            {
+                // !!! Process headers...
+                //
+                // Conditional requests - if not satisfied, return headers plus 304 'Not Modified'
+                //
+                //     If-Modified-Since: <date>
+                //     If-None-Match: <etag> (one or more sep by comma)
+                //
+                // Range request (return 206 'Partial Content')
+                //
+                //     Range: <ranges>
+                //
+                log.info("getObject got headers:", requestHeaders);
+            }
 
             try
             {
@@ -168,7 +194,20 @@ module.exports = function(params, config)
                 }
                 else
                 {
-                    callback(null, fs.createReadStream(filePath));
+                    // Generate some headers from the content
+                    //
+                    var respHeaders = {};
+
+                    respHeaders['content-type'] = mimeTypes.lookup(filePath) || 'application/octet-stream';
+                    respHeaders['content-md5'] = md5File.sync(filePath);
+                    respHeaders['etag'] = respHeaders['content-md5'];
+                    respHeaders['content-length'] = stats.size;
+                    respHeaders['last-modified'] = stats.mtime.toISOString();
+                    respHeaders['accept-ranges'] = 'bytes';
+
+                    // !!! headers['content-range'] - on range request, when supported
+
+                    callback(null, fs.createReadStream(filePath), 200, 'OK', respHeaders);
                 }
             }
             catch (err)

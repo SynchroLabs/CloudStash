@@ -32,6 +32,8 @@
     "lodash": "^4.17.4",
     "log4js": "^0.6.21",
     "manta": "^4.4.0",
+    "md5-file": "^3.1.1",
+    "mime-types": "^2.1.16",
     "nconf": "^0.7.1",
     "restify": "^4.3.0",
     "restify-jwt": "^0.4.0",
