@@ -156,10 +156,12 @@ describe('CloudStash', function() {
   });
 
   describe('/files/download', function() {
+    var eTag;
+    var lastModified;
     it('succeeds and returns file contents for existing object foo.txt', function(done) {
       request(server)
         .post('/2/files/download')
-        .set('Accept', 'application/octet-stream')
+        .set('Accept', 'text/plain')
         .set('Authorization', "Bearer " + testToken)
         .set('Dropbox-API-Arg', '{ "path": "foo.txt" }')
         .expect('Content-Type', 'text/plain')
@@ -167,11 +169,17 @@ describe('CloudStash', function() {
         .expect(function(res){
              assert(res);
              assert(res.headers);
+             assert(res.headers["etag"]);
+             assert(res.headers["last-modified"]);
+             assert(res.headers["accept-ranges"]);
+             assert.equal(res.headers["accept-ranges"], "bytes");
              assert(res.headers["dropbox-api-result"]);
              var entry = JSON.parse(res.headers["dropbox-api-result"]);
              assert.equal(entry.name, "foo.txt");
              assert(res.body);
              assert.equal(res.text, 'Foo is the word'); 
+             eTag = res.headers["etag"];
+             lastModified = res.headers["last-modified"];
         })
         .expect(200, done);
     });
@@ -189,6 +197,115 @@ describe('CloudStash', function() {
             assert.equal(res.body.error.path[".tag"], 'not_found'); 
         })
         .expect(409, done);
+    });
+    it('returns not-modified when using current eTag', function(done) {
+      request(server)
+        .post('/2/files/download')
+        .set('Authorization', "Bearer " + testToken)
+        .set('If-None-Match', eTag)
+        .set('Dropbox-API-Arg', '{ "path": "foo.txt" }')
+//      .expect('Content-Type', 'text/plain')
+        .expect(304, done);
+    });
+    it('succeeds and returns file contents when using non-current eTag', function(done) {
+      request(server)
+        .post('/2/files/download')
+        .set('Accept', 'text/plain')
+        .set('Authorization', "Bearer " + testToken)
+        .set('If-None-Match', 'foo')
+        .set('Dropbox-API-Arg', '{ "path": "foo.txt" }')
+        .expect('Content-Type', 'text/plain')
+        .expect('Dropbox-API-Result', /.+/)
+        .expect(function(res){
+             assert(res);
+             assert(res.headers);
+             assert(res.headers["dropbox-api-result"]);
+             var entry = JSON.parse(res.headers["dropbox-api-result"]);
+             assert.equal(entry.name, "foo.txt");
+             assert(res.body);
+             assert.equal(res.text, 'Foo is the word'); 
+        })
+        .expect(200, done);
+    });
+    it('returns not-modified when using current last-modified', function(done) {
+      request(server)
+        .post('/2/files/download')
+        .set('Authorization', "Bearer " + testToken)
+        .set('If-Modified-Since', lastModified)
+        .set('Dropbox-API-Arg', '{ "path": "foo.txt" }')
+//      .expect('Content-Type', 'text/plain')
+        .expect(304, done);
+    });
+    it('returns content when using older date', function(done) {
+      var dayBeforeLastModified = new Date(lastModified);
+      dayBeforeLastModified.setDate(dayBeforeLastModified.getDate()-1);
+      request(server)
+        .post('/2/files/download')
+        .set('Authorization', "Bearer " + testToken)
+        .set('If-Modified-Since', dayBeforeLastModified)
+        .set('Dropbox-API-Arg', '{ "path": "foo.txt" }')
+        .expect('Content-Type', 'text/plain')
+        .expect(function(res){
+             assert(res);
+             assert(res.headers);
+             assert(res.headers["dropbox-api-result"]);
+             var entry = JSON.parse(res.headers["dropbox-api-result"]);
+             assert.equal(entry.name, "foo.txt");
+             assert(res.body);
+             assert.equal(res.text, 'Foo is the word'); 
+        })
+        .expect(200, done);
+    });
+    it('returns not-modified when using newer date', function(done) {
+      var dayAfterLastModified = new Date(lastModified);
+      dayAfterLastModified.setDate(dayAfterLastModified.getDate()+1);
+      request(server)
+        .post('/2/files/download')
+        .set('Authorization', "Bearer " + testToken)
+        .set('If-Modified-Since', dayAfterLastModified)
+        .set('Dropbox-API-Arg', '{ "path": "foo.txt" }')
+//      .expect('Content-Type', 'text/plain')
+        .expect(304, done);
+    });
+    it('succeeds and returns requested range', function(done) {
+      request(server)
+        .post('/2/files/download')
+        .set('Accept', 'text/plain')
+        .set('Authorization', "Bearer " + testToken)
+        .set('If-Match', eTag)
+        .set('Range', 'bytes=4-9')
+        .set('Dropbox-API-Arg', '{ "path": "foo.txt" }')
+//      .expect('Content-Type', 'text/plain')
+        .expect('Content-Range', 'bytes 4-9/15')
+        .expect(function(res){
+           if (res.header['content-type'] === 'text/plain') {
+             assert.equal(res.text, 'is the'); 
+           }
+           else {
+             assert.equal(res.body, 'is the');
+           }
+        })
+        .expect(206, done);
+    });
+    it('returns range not satisfiable with non-current If-Match eTag', function(done) {
+      request(server)
+        .post('/2/files/download')
+        .set('Accept', 'text/plain')
+        .set('Authorization', "Bearer " + testToken)
+        .set('If-Match', "foo")
+        .set('Range', 'bytes=4-9')
+        .set('Dropbox-API-Arg', '{ "path": "foo.txt" }')
+        .expect(416, done);
+    });
+    it('returns range not satisfiable with bad range', function(done) {
+      request(server)
+        .post('/2/files/download')
+        .set('Accept', 'text/plain')
+        .set('Authorization', "Bearer " + testToken)
+        .set('If-Match', eTag)
+        .set('Range', 'bytes=40-90')
+        .set('Dropbox-API-Arg', '{ "path": "foo.txt" }')
+        .expect(416, done);
     });
   });
 

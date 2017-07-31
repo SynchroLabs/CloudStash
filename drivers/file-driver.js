@@ -167,22 +167,6 @@ module.exports = function(params, config)
 
             var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
-            if (requestHeaders)
-            {
-                // !!! Process headers...
-                //
-                // Conditional requests - if not satisfied, return headers plus 304 'Not Modified'
-                //
-                //     If-Modified-Since: <date>
-                //     If-None-Match: <etag> (one or more sep by comma)
-                //
-                // Range request (return 206 'Partial Content')
-                //
-                //     Range: <ranges>
-                //
-                log.info("getObject got headers:", requestHeaders);
-            }
-
             try
             {
                 var stats = fs.statSync(filePath);
@@ -196,6 +180,7 @@ module.exports = function(params, config)
                 {
                     // Generate some headers from the content
                     //
+                    var respSent = false;
                     var respHeaders = {};
 
                     respHeaders['content-type'] = mimeTypes.lookup(filePath) || 'application/octet-stream';
@@ -205,19 +190,103 @@ module.exports = function(params, config)
                     respHeaders['last-modified'] = stats.mtime.toISOString();
                     respHeaders['accept-ranges'] = 'bytes';
 
-                    // !!! headers['content-range'] - on range request, when supported
+                    if (requestHeaders)
+                    {
+                        // If-None-Match
+                        //
+                        if (requestHeaders['if-none-match'])
+                        {
+                            if (requestHeaders['if-none-match'].indexOf(respHeaders['etag']) != -1)
+                            {
+                                callback(null, null, 304, 'Not Modified', respHeaders);
+                                respSent = true;
+                            }
+                        }
+                        // If-Modified-Since (ignored when If-None-Match also present)
+                        //
+                        else if (requestHeaders["if-modified-since"])
+                        {
+                            var ifModDate = new Date(requestHeaders["if-modified-since"]);
+                            log.info("Comparing if-modified-since %s to mtime: %s", ifModDate, stats.mtime);
 
-                    callback(null, fs.createReadStream(filePath), 200, 'OK', respHeaders);
+                            if (new Date(requestHeaders["if-modified-since"]) >= stats.mtime)
+                            {
+                                callback(null, null, 304, 'Not Modified', respHeaders);
+                                respSent = true;
+                            }
+                        }
+                    }
+
+                    if (!respSent)
+                    {
+                        var respCode = 200;
+                        var respMessage = "OK";
+                        var readStreamOpts = {};
+
+                        // Range 
+                        //
+                        if (requestHeaders && requestHeaders["range"])
+                        {
+                            if (requestHeaders['if-match'] && (requestHeaders['if-match'].indexOf(respHeaders['etag']) === -1))
+                            {
+                                log.error("getObject Range unsatisfiable, If-Match of %s did't match %s", requestHeaders['if-match'], respHeaders['etag']);
+                                callback(null, null, 416, 'Range Not Satisfiable', respHeaders);
+                                respSent = true;
+                            }
+                            else if (requestHeaders["range"].indexOf("bytes=") === 0) // Forms we support: "bytes=200-" "bytes=200-1000"
+                            {
+                                var ranges = requestHeaders["range"].substring("bytes=".length).split("-");
+                                readStreamOpts.start = parseInt(ranges[0]);
+                                if (ranges.length > 1)
+                                {
+                                    readStreamOpts.end = parseInt(ranges[1]);
+                                }
+                                else
+                                {
+                                    readStreamOpts.end = stats.size;
+                                }
+
+                                if (isNaN(readStreamOpts.start) || 
+                                    isNaN(readStreamOpts.end) || 
+                                    (readStreamOpts.start >= readStreamOpts.end) || 
+                                    (readStreamOpts.end > stats.size))
+                                {
+                                    log.error("getObject Range unsatisfiable, start %s, end %s", readStreamOpts.start, readStreamOpts.end);
+                                    callback(null, null, 416, 'Range Not Satisfiable', respHeaders);
+                                    respSent = true;
+                                }
+                                else
+                                {
+                                    respCode = 206;
+                                    respMessage = "Partial Content";
+                                    respHeaders['content-range'] = "bytes " + readStreamOpts.start + "-" + readStreamOpts.end + "/" + stats.size;
+                                }
+                            }
+                            else
+                            {
+                                log.error("getObject Range request contained no 'bytes=' prefix, unsatisfiable");
+                                callback(null, null, 416, 'Range Not Satisfiable', respHeaders);
+                                respSent = true;
+                            }
+                        }
+
+                        if (!respSent)
+                        {
+                            callback(null, fs.createReadStream(filePath, readStreamOpts), respCode, respMessage, respHeaders);
+                        }
+                    }
                 }
             }
             catch (err)
             {
                 if (err.code === 'ENOENT')
                 {
-                    // We return null content to indicate "Not found"
-                    err = null;
+                    callback(null, null, 404, 'Not Found');
                 }
-                callback(err, null);
+                else
+                {
+                    callback(err);
+                }
             }
         },
         putObject: function(user, filename, callback)

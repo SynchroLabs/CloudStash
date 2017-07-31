@@ -46,6 +46,13 @@
 //
 // ----
 //
+// !!! When doing Manta get using If-Modified-Since or If-None-Match and the return is a 304, the content is empty and the
+//     content-type is application/octet-stream.  Likewise, when doing Manta get with a Range request, the the content-type\
+//     is application/octet-stream.  One way of looking at this is that the content-type describes the content type of the
+//     response, not the underlying object.  In that view, in the former case, the content-type is irrelevant, as there is no
+//     content.  And in the latter case, since it is a byte stream, application/octet-stream kind of makes sense (I guess), though
+//     there are a bunch of examples online where the underlying object content type is used (which is how the file driver does it).
+//
 var log = require('./../lib/logger').getLogger("manta-driver");
 
 var fs = require('fs');
@@ -290,12 +297,14 @@ module.exports = function(params, config)
 
             var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
-            if (headers)
+            if (requestHeaders)
             {
-                log.info("getObject got headers:", headers);
+                log.info("getObject got headers:", requestHeaders);
             }
 
-            var options = { headers: lodash.pick(headers, ['if-modified-since', 'if-none-match', 'range']) };
+            var options = { headers: lodash.pick(requestHeaders, ['if-modified-since', 'if-none-match', 'if-match', 'range']) };
+
+            log.info("Calling client.get with options:", options);
 
             client.get(filePath, options, function(err, stream, res)
             {
@@ -303,8 +312,19 @@ module.exports = function(params, config)
                 {
                     if (err.code == 'ResourceNotFound')
                     {
-                        // Return null - file doesn't exist
-                        callback(null, null);
+                        callback(null, null, 404, 'Not Found');
+                    }
+                    else if (err.code === 'RequestedRangeNotSatisfiableError')
+                    {
+                        callback(null, null, 416, "Range Not Satisfiable");
+                    }
+                    else if (options.headers.range && (err.code === 'PreconditionFailed') && (err.message.indexOf('if-match') !== -1))
+                    {
+                        // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Match
+                        //
+                        // When the If-Match precondition fails when doing a Range request, the correct response is...
+                        //
+                        callback(null, null, 416, "Range Not Satisfiable");
                     }
                     else
                     {
@@ -331,7 +351,9 @@ module.exports = function(params, config)
                 else
                 {
                     // Set the Content-Type from the filename
-                    var opts = { type: mimeTypes.lookup(filePath) || 'application/octet-stream' };
+                    log.info("Setting mime type to:", mimeTypes.lookup(filePath));
+
+                    var options = { type: mimeTypes.lookup(filePath) || 'application/octet-stream' };
                     callback(null, client.createWriteStream(filePath, options));
                 }
             });
