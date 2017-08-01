@@ -41,13 +41,14 @@
   },
   "scripts": {
     "start": "node app.js",
-    "test": "./node_modules/.bin/mocha"
+    "test": "nyc --reporter=html --reporter=text mocha"
   },
   "engines": {
     "node": ">= 0.12"
   },
   "devDependencies": {
     "mocha": "^3.4.2",
+    "nyc": "^11.1.0",
     "supertest": "^3.0.0"
   }
 }
