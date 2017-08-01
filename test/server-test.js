@@ -355,7 +355,84 @@ describe('CloudStash', function() {
         .expect('Content-Type', /json/)
         .expect(200, done);
     });
+  });
 
+  describe('files/upload of foo.txt when already exists', function() {
+    it('fails as expected', function(done) {
+      request(server)
+        .post('/2/files/upload')
+        .set('Accept', 'application/json')
+        .set('Authorization', "Bearer " + testToken)
+        .set('Dropbox-API-Arg', '{ "path": "/foo.txt" }')
+        .send('Foo is not the word')
+        .expect('Content-Type', /json/)
+        .expect(function(res){
+            assert(res.body);
+            assert(res.body.error);
+            assert.equal(res.body.error_summary, 'to/conflict'); 
+            assert.equal(res.body.error[".tag"], 'to'); 
+            assert.equal(res.body.error.to[".tag"], 'conflict'); 
+        })
+        .expect(409, done);
+    });
+    it('succeeds with rename', function(done) {
+      request(server)
+        .post('/2/files/upload')
+        .set('Accept', 'application/json')
+        .set('Authorization', "Bearer " + testToken)
+        .set('Dropbox-API-Arg', '{ "path": "/foo.txt", "autorename": true }')
+        .send('Foo1 is the word')
+        .expect('Content-Type', /json/)
+        .expect(function(res){
+            assert(res.body);
+            assert.equal(res.body[".tag"], 'file'); 
+            assert.equal(res.body.name, 'foo (1).txt');
+        })
+        .expect(200, done);
+    });
+    it('succeeds with overwrite', function(done) {
+      request(server)
+        .post('/2/files/upload')
+        .set('Accept', 'application/json')
+        .set('Authorization', "Bearer " + testToken)
+        .set('Dropbox-API-Arg', '{ "path": "/foo (1).txt", "mode": "overwrite" }')
+        .send('Foo1 is the word again')
+        .expect('Content-Type', /json/)
+        .expect(function(res){
+            assert(res.body);
+            assert.equal(res.body[".tag"], 'file'); 
+            assert.equal(res.body.name, 'foo (1).txt');
+        })
+        .expect(200, done);
+    });
+    it('returns new file contents after overwrite', function(done) {
+      request(server)
+        .post('/2/files/download')
+        .set('Authorization', "Bearer " + testToken)
+        .set('Dropbox-API-Arg', '{ "path": "/foo (1).txt" }')
+        .expect('Content-Type', 'text/plain')
+        .expect('Dropbox-API-Result', /.+/)
+        .expect(function(res){
+             assert(res);
+             assert(res.headers);
+             assert(res.headers["dropbox-api-result"]);
+             var entry = JSON.parse(res.headers["dropbox-api-result"]);
+             assert.equal(entry.name, "foo (1).txt");
+             assert(res.text);
+             assert(res.text, "Foo1 is the word again"); 
+        })
+        .expect(200, done);
+    });
+    after("Clean up folder contents", function(done)
+    {
+      request(server)
+        .post('/2/files/delete')
+        .set('Accept', 'application/json')
+        .set('Authorization', "Bearer " + testToken)
+        .send({ path: "/foo (1).txt" })
+        .expect('Content-Type', /json/)
+        .expect(200, done);
+    });
   });
 
   describe('/files/create_folder of test_folder', function() {
@@ -1855,6 +1932,162 @@ describe('CloudStash', function() {
         .set('Accept', 'application/json')
         .set('Authorization', "Bearer " + testToken)
         .send({ path: "target.txt" })
+        .expect(200, done);
+    });
+  });
+
+  describe('Batch multipart upload', function() {
+    var uploadId1;
+    var uploadId2;
+    var async_job_id;
+
+    it('succeeds in starting upload session (file 1)', function(done) {
+      request(server)
+        .post('/2/files/upload_session/start')
+        .set('Accept', 'application/json')
+        .set('Authorization', "Bearer " + testToken)
+        .set('Dropbox-API-Arg', '{ }')
+        .send('Foo is the word')
+        .expect('Content-Type', /json/)
+        .expect(function(res){
+            assert(res.body);
+            assert(res.body.session_id); 
+        })
+        .expect(function(res) {
+            uploadId1 = res.body.session_id;
+        })
+        .expect(200, done);
+    });
+    it('succeeds in appending first part using append (file 1)', function(done) {
+      request(server)
+        .post('/2/files/upload_session/append_v2')
+        .set('Accept', 'application/json')
+        .set('Authorization', "Bearer " + testToken)
+        .set('Dropbox-API-Arg', '{ "cursor": { "session_id": "' + uploadId1 + '", "offset": 15 }, "close": true }')
+        .send('Bar is the next word')
+        .expect(200, done);
+    });
+    it('succeeds in starting upload session (file 2)', function(done) {
+      request(server)
+        .post('/2/files/upload_session/start')
+        .set('Accept', 'application/json')
+        .set('Authorization', "Bearer " + testToken)
+        .set('Dropbox-API-Arg', '{ }')
+        .send('Car is the word')
+        .expect('Content-Type', /json/)
+        .expect(function(res){
+            assert(res.body);
+            assert(res.body.session_id); 
+        })
+        .expect(function(res) {
+            uploadId2 = res.body.session_id;
+        })
+        .expect(200, done);
+    });
+    it('succeeds in appending first part using append (file 2)', function(done) {
+      request(server)
+        .post('/2/files/upload_session/append_v2')
+        .set('Accept', 'application/json')
+        .set('Authorization', "Bearer " + testToken)
+        .set('Dropbox-API-Arg', '{ "cursor": { "session_id": "' + uploadId2 + '", "offset": 15 }, "close": true }')
+        .send('Zoo is the next word')
+        .expect(200, done);
+    });
+    it('succeeds in upload session finish batch', function(done) {
+      var entries = [
+        { cursor: { session_id: uploadId1, offset: 35 }, commit: { path: "test/file1.txt" } },
+        { cursor: { session_id: uploadId2, offset: 35 }, commit: { path: "test/file2.txt" } },
+      ];
+      request(server)
+        .post('/2/files/upload_session/finish_batch')
+        .set('Accept', 'application/json')
+        .set('Authorization', "Bearer " + testToken)
+        .send({ "entries": entries })
+        .expect(function(res){
+            assert(res.body);
+            assert.equal(res.body[".tag"], 'async_job_id');
+            async_job_id = res.body["async_job_id"];
+            log.info("Got job id:", async_job_id);
+        })
+        .expect(200, done);
+    });
+
+    it('gets "complete" from upload session finish batch job', function(done) {
+      this.timeout(_testTimeout * 2); 
+      var complete = false;
+      async.whilst(
+        function() 
+        { 
+          return !complete;
+        },
+        function(callback) 
+        {
+          request(server)
+            .post('/2/files/upload_session/finish_batch/check')
+            .set('Accept', 'application/json')
+            .set('Authorization', "Bearer " + testToken)
+            .send({ "async_job_id": async_job_id })
+            .expect('Content-Type', /json/)
+            .expect(function(res){
+                assert(res.body);
+                if (res.body[".tag"] === "complete")
+                {
+                  log.info("Batch delete complete");
+                  complete = true;
+                }
+                else
+                {
+                  // If not complete, anything other than in_progress is an error
+                  assert.equal(res.body[".tag"], 'in_progress');
+                }
+            })
+            .expect(200, function(err)
+            {
+              if (err || complete)
+              {
+                callback(err);
+              }
+              else
+              {
+                // If we're not done, wait before retrying
+                setTimeout(callback, 1000);
+              }
+            });
+        },
+        function (err, n) 
+        {
+            done(err);
+        }      
+      );
+    });
+    it('uploaded file (file 1) has correct contents', function(done) {
+      request(server)
+        .post('/2/files/download')
+        .set('Authorization', "Bearer " + testToken)
+        .set('Dropbox-API-Arg', '{ "path": "test/file1.txt" }')
+        .expect('Content-Type', 'text/plain')
+        .expect(function(res){
+             assert.equal(res.text, 'Foo is the wordBar is the next word'); 
+        })
+        .expect(200, done);
+    });
+    it('uploaded file (file 2) has correct contents', function(done) {
+      request(server)
+        .post('/2/files/download')
+        .set('Authorization', "Bearer " + testToken)
+        .set('Dropbox-API-Arg', '{ "path": "test/file2.txt" }')
+        .expect('Content-Type', 'text/plain')
+        .expect(function(res){
+             assert.equal(res.text, 'Car is the wordZoo is the next word'); 
+        })
+        .expect(200, done);
+    });
+    after('delete uploaded files', function(done) {
+      request(server)
+        .post('/2/files/delete')
+        .set('Accept', 'application/json')
+        .set('Authorization', "Bearer " + testToken)
+        .send({ path: "test" })
         .expect(200, done);
     });
   });
