@@ -187,7 +187,7 @@ module.exports = function(params, config)
                     respHeaders['content-md5'] = md5File.sync(filePath);
                     respHeaders['etag'] = respHeaders['content-md5'];
                     respHeaders['content-length'] = stats.size;
-                    respHeaders['last-modified'] = stats.mtime.toISOString();
+                    respHeaders['last-modified'] = stats.mtime.toUTCString();
                     respHeaders['accept-ranges'] = 'bytes';
 
                     if (requestHeaders)
