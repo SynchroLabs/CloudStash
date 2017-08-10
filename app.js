@@ -26,7 +26,12 @@ var log = loggerModule.getLogger("app");
 
 log.info("CloudStash server v%s loading - %s", pkg.version, config.configDetails);
 
-var _jwtSecret = "!!!super secret token that should be replaced with something private/secure!!!";
+var _jwtSecret = config.get('TOKEN_SECRET');
+if (!_jwtSecret)
+{
+    _jwtSecret = "!!!super secret token that should be replaced with something private/secure!!!";
+    log.warn("TOKEN_SECRET not specified in configuration, using default (unsafe) token secret - DO NOT USE IN PRODUCTION");
+}
 
 var server = cloudStashServer(_jwtSecret, config);
 if (!server)
@@ -35,9 +40,28 @@ if (!server)
     process.exit();
 }
 
-server.listen(config.get('PORT'), function () 
+server.listen(config.get('PORT'), function (err) 
 {
-    log.info('CloudStash listening on port:', this.address().port);
+    if (err)
+    {
+        log.error("CloudStash server failed in listen()", err);
+    }
+    else
+    {
+        log.info('CloudStash listening on port:', this.address().port);
+    }
+});
+
+server.on('error', function(err)
+{
+    if (err.code === 'EACCES')
+    {
+        log.error("PORT specified (%d) already in use", config.get('PORT'));
+    }
+    else
+    {
+        log.error("CloudStash server error:", err);
+    }
 });
 
 process.on('SIGTERM', function ()
