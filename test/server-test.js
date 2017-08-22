@@ -1001,7 +1001,7 @@ describe('CloudStash', function() {
         {
           log.error(err);
         }
-        done();
+        done(err);
       });
     });
 
@@ -1037,9 +1037,18 @@ describe('CloudStash', function() {
         .expect(200, done);
     });
 
+    var cursorAfterAdd
+
     it('list_folder/continue returns file added after get_latest_cursor', function(done) {
+      var intervalMs = 1050;
+      this.timeout(_testTimeout + intervalMs); 
       async.series(
       [
+        function(callback)
+        {
+          // We need to wait to make sure the new file has a later timestamp
+          setTimeout(callback, intervalMs);
+        },
         function(callback) 
         {
           request(server)
@@ -1047,7 +1056,7 @@ describe('CloudStash', function() {
             .set('Accept', 'application/json')
             .set('Authorization', "Bearer " + testToken)
             .set('Dropbox-API-Arg', '{ "path": "seven.txt" }')
-            .send('This is file six.txt')
+            .send('This is file seven.txt')
             .expect(200, callback);
         },
         function(callback)
@@ -1062,9 +1071,11 @@ describe('CloudStash', function() {
                 assert(res.body);
                 assert(res.body.entries);
                 assert.equal(res.body.entries.length, 1);
-                assert.equal(res.body.entries[0].name, "six.txt"); 
+                assert.equal(res.body.entries[0].name, "seven.txt"); 
                 assert.equal(res.body.has_more, false); 
                 assert(res.body.cursor);
+                assert.notEqual(res.body.cursor, cursor);
+                cursorAfterAdd = res.body.cursor;
             })
             .expect(200, callback);
         },
@@ -1075,13 +1086,38 @@ describe('CloudStash', function() {
         {
           log.error(err);
         }
-        done();
+        done(err);
       });
     });
 
-    //
-    // !!! Long poll - list_folder/get_latest_cursor, list_folder/longpoll - this one might be tricky to test
-    //
+    it('list_folder/longpoll returns false using cursor without changes', function(done) {
+      request(server)
+        .post('/2/files/list_folder/longpoll')
+        .set('Accept', 'application/json')
+        .set('Authorization', "Bearer " + testToken)
+        .send({ cursor: cursorAfterAdd, timeout: -1 })
+        .expect('Content-Type', /json/)
+        .expect(function(res){
+            assert(res.body);
+            log.info("res:", res.body)
+            assert.equal(res.body.changes, false);
+        })
+        .expect(200, done);
+    });
+
+    it('list_folder/longpoll returns true using current with changes', function(done) {
+      request(server)
+        .post('/2/files/list_folder/longpoll')
+        .set('Accept', 'application/json')
+        .set('Authorization', "Bearer " + testToken)
+        .send({ cursor: cursor, timeout: -1 })
+        .expect('Content-Type', /json/)
+        .expect(function(res){
+            assert(res.body);
+            assert.equal(res.body.changes, true);
+        })
+        .expect(200, done);
+    });
 
     after("Clean up folder contents", function(done)
     {
@@ -1112,7 +1148,7 @@ describe('CloudStash', function() {
           {
               log.error(err);
           }
-          done();
+          done(err);
       });
     });
   });
@@ -1833,7 +1869,7 @@ describe('CloudStash', function() {
         function (err, n) 
         {
             done(err);
-        }      
+        }
       );
     });
 
@@ -2057,7 +2093,7 @@ describe('CloudStash', function() {
         function (err, n) 
         {
             done(err);
-        }      
+        }
       );
     });
     it('uploaded file (file 1) has correct contents', function(done) {

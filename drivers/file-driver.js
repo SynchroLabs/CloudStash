@@ -117,27 +117,25 @@ module.exports = function(params, config)
                     {
                         if (files)
                         {
-                            files.forEach(function(file)
+                            for (var i = 0; i < files.length; i++)
                             {
+                                var file = files[i];
                                 var entry = getEntryDetails(user, path.posix.join(fullPath, file));
                                 log.debug("Entry", entry);
 
                                 if (onEntry(entry))
                                 {
                                     stopped = true;
-                                    done();
+                                    break;
                                 }
                                 else if (recursive && (entry[".tag"] == "folder"))
                                 {
                                     q.push({ dirpath: path.posix.join(task.dirpath, entry.name) });
                                 }
-                            });
+                            }
                         }
 
-                        if (!stopped)
-                        {
-                            done();
-                        }
+                        done();
                     }
                 });
             }, maxConcurrency);
