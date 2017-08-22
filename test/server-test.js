@@ -1215,6 +1215,23 @@ describe('CloudStash', function() {
         .expect(200, done);
     });
 
+    it('finds item case mismatch', function(done) {
+      request(server)
+        .post('/2/files/search')
+        .set('Accept', 'application/json')
+        .set('Authorization', "Bearer " + testToken)
+        .send({ path: "/testfolder", query: "ThRee" })
+        .expect('Content-Type', /json/)
+        .expect(function(res){
+            assert(res.body);
+            assert(res.body.matches);
+            assert.equal(res.body.matches.length, 1); 
+            assert.equal(res.body.matches[0].match_type[".tag"], "filename"); 
+            assert.equal(res.body.matches[0].metadata["name"], "three.txt"); 
+        })
+        .expect(200, done);
+    });
+
     it('succeeds in moving folder tree', function(done) {
       this.timeout(_testTimeout * files.length); 
       request(server)
