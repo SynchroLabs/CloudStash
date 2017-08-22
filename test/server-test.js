@@ -1091,10 +1091,10 @@ describe('CloudStash', function() {
     });
 
     it('list_folder/longpoll returns false using cursor without changes', function(done) {
+      // Note: No auth header (this API endpoint doesn't used auth - gets what it needs from the cursor)
       request(server)
         .post('/2/files/list_folder/longpoll')
         .set('Accept', 'application/json')
-        .set('Authorization', "Bearer " + testToken)
         .send({ cursor: cursorAfterAdd, timeout: -1 })
         .expect('Content-Type', /json/)
         .expect(function(res){
@@ -1106,10 +1106,10 @@ describe('CloudStash', function() {
     });
 
     it('list_folder/longpoll returns true using current with changes', function(done) {
+      // Note: No auth header (this API endpoint doesn't used auth - gets what it needs from the cursor)
       request(server)
         .post('/2/files/list_folder/longpoll')
         .set('Accept', 'application/json')
-        .set('Authorization', "Bearer " + testToken)
         .send({ cursor: cursor, timeout: -1 })
         .expect('Content-Type', /json/)
         .expect(function(res){
