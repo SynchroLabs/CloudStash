@@ -1,3 +1,10 @@
 Dockerfile
-node_modules/
+.git
+.gitignore
+.DS_Store
+.nyc_output
+coverage
+docs
+node_modules
 test
+config_*.json

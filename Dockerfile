@@ -1,9 +1,9 @@
-# Latest Node.js 4.x LTS
-FROM node:argon 
+# Latest Node.js 8.x LTS
+FROM node:alpine
 
 # NOTE: Set any CloudStash env variables here
 #
-ENV CLOUDSTASH__PORT 80
+ENV CLOUDSTASH__PORT 443
 
 # --- You shouldn't need to touch anything below this ---
 
