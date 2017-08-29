@@ -98,7 +98,7 @@ module.exports = function(params, config)
         //
         var safePath = path.posix.normalize(filePath).replace(/^(\.\.[\/\\])+/, '');
 
-        if (path.sep != '/')
+        if (path.sep != '/') // !!! WTF?
         {
             // Replace forward slash with local platform seperator
             //
