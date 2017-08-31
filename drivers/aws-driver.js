@@ -100,6 +100,23 @@ module.exports = function(params, config)
         provider: "aws",
         createDirectory: function(user, dirPath, callback)
         {
+            var fullPath = toSafeLocalPath(user.account_id, user.app_id, dirPath) + "/";
+            log.info("Creating folder:", fullPath);
+
+            var options = { Bucket: params.bucket, Key: fullPath }
+            s3.putObject(options, function(err, data)
+            {
+                console.log("Put dir:", data)
+                callback(err);
+            });
+        },
+        deleteDirectory: function(user, dirPath, callback)
+        {
+            this.deleteObject(user, dirPath + "/", callback);
+        },
+        getDirectoryMetaData: function(user, dirPath, callback)
+        {
+            this.getObjectMetaData(user, dirPath + "/", callback);
         },
         traverseDirectory: function(user, dirPath, recursive, onEntry, callback)
         {
@@ -160,12 +177,22 @@ module.exports = function(params, config)
 
             try 
             {
-                // If we want to get the respCode and headers from this request before we call back with the stream...
+                // We want to get the statusCode and headers from this request before we call back with the stream...
                 //
                 // https://stackoverflow.com/questions/35782434/streaming-file-from-s3-with-express-including-information-on-length-and-filetype
                 //
-                var stream = s3.getObject(options).createReadStream();
-                callback(null, stream, 200, "Ok", null);
+                // Calling createReadStream() issues a send() on the request, which will result in the 'httpHeaders'
+                // event on the request object getting signalled at some point.  By processing that event, we can get
+                // the statusCode, headers, and the stream all in one place to return to the caller.
+                //
+                var req = s3.getObject(options);
+                var stream = req.createReadStream();
+                req.on('httpHeaders', function (statusCode, headers) 
+                {
+                    // !!! We might want to look at >300 statusCode values here to send an error back instead.
+                    //
+                    callback(null, stream, statusCode, null, headers);
+                })
             }
             catch (error)
             {
@@ -176,6 +203,27 @@ module.exports = function(params, config)
         },
         putObject: function(user, filename, callback)
         {
+            // Unlike Manta (where you create a write stream and return it to the caller to write to it), here
+            // we need to pass a readableStream to S3.
+            //
+            // For multipart upload where we currenty pipe multiple read streams sequentially to the upload write stream, we could
+            // instead create a transform stream to logically concatenate those multiple read streams into a single read stream
+            // (opening each new read stream at the end of the previous stream), then s3.putObject could process that meta-read-stream. 
+            //
+            // See:
+            //    https://nodejs.org/api/stream.html#stream_implementing_a_transform_stream 
+            //    https://github.com/sedenardi/node-stream-concat/blob/master/index.js
+            //
+            var fullPath = toSafeLocalPath(user.account_id, user.app_id, filename);
+            log.info("Putting object:", fullPath);
+
+            var options = { Bucket: params.bucket, Key: fullPath, Body: someDataStream }
+
+            s3.putObject(options, function(err, data) 
+            {
+                // !!!
+                log.info("putObject response:", data);
+            });
         },
         copyObject: function(user, filename, newFilename, callback)
         {
@@ -198,9 +246,16 @@ module.exports = function(params, config)
             {
                 if (err)
                 {
-                    log.error(err);
-                    callback(err);
-                } 
+                    if (err.code === 'NotFound')
+                    {
+                        callback(null, null);
+                    }
+                    else
+                    {
+                        log.error(err);
+                        callback(err);
+                    }
+                }
                 else 
                 {
                     /*

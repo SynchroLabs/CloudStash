@@ -42,7 +42,8 @@ else
       { 
           "provider": "file", 
           "basePath": "test/_test_store" 
-      } 
+      },
+      "LONGPOLL_INTERVAL_MS": 1000
   });
 }
 
@@ -1090,8 +1091,12 @@ describe('CloudStash', function() {
       });
     });
 
+    
+
     it('list_folder/longpoll returns false using cursor without changes', function(done) {
       // Note: No auth header (this API endpoint doesn't used auth - gets what it needs from the cursor)
+      this.timeout(_testTimeout + _testConfig.get('LONGPOLL_INTERVAL_MS') + 1000); 
+
       request(server)
         .post('/2/files/list_folder/longpoll')
         .set('Accept', 'application/json')
