@@ -32,7 +32,7 @@ if (driver === "manta")
   // trigger round trips to Manta, which from a machine not running in the Joyent datacenter can take a fair amount
   // of time to complete).
   //
-  _testTimeout = 5000;
+  _testTimeout = 20000;
 }
 else
 {
@@ -1090,8 +1090,6 @@ describe('CloudStash', function() {
         done(err);
       });
     });
-
-    
 
     it('list_folder/longpoll returns false using cursor without changes', function(done) {
       // Note: No auth header (this API endpoint doesn't used auth - gets what it needs from the cursor)

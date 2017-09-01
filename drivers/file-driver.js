@@ -287,7 +287,7 @@ module.exports = function(params, config)
                 }
             }
         },
-        putObject: function(user, filename, callback)
+        putObject: function(user, filename, readStream, callback)
         {
             var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
@@ -301,7 +301,33 @@ module.exports = function(params, config)
                 {
                     // !!! May need to use mode r+ (instead of default w) to overwrite existing file
                     //
-                    callback(null, fs.createWriteStream(filePath));
+                    var writeStream = fs.createWriteStream(filePath);
+
+                    var errorSent = false;
+
+                    function onError(err)
+                    {
+                        if (!errorSent)
+                        {
+                            errorSent = true;
+                            readStream.unpipe();
+                            writeStream.end();
+                            callback(err);
+                        }
+                    }
+
+                    readStream.once('error', onError);
+                    writeStream.once('error', onError);
+
+                    writeStream.once('close', function(details) 
+                    {
+                        if (!errorSent)
+                        {
+                            callback(null, details);
+                        }
+                    });
+
+                    readStream.pipe(writeStream);
                 }
             });
         },

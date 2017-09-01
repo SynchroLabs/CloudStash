@@ -338,7 +338,7 @@ module.exports = function(params, config)
                 }
             });
         },
-        putObject: function(user, filename, callback)
+        putObject: function(user, filename, readStream, callback)
         {
             var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
 
@@ -354,7 +354,33 @@ module.exports = function(params, config)
                     log.info("Setting mime type to:", mimeTypes.lookup(filePath));
 
                     var options = { type: mimeTypes.lookup(filePath) || 'application/octet-stream' };
-                    callback(null, client.createWriteStream(filePath, options));
+                    var writeStream = client.createWriteStream(filePath, options);
+
+                    var errorSent = false;
+
+                    function onError(err)
+                    {
+                        if (!errorSent)
+                        {
+                            errorSent = true;
+                            readStream.unpipe();
+                            writeStream.end();
+                            callback(err);
+                        }
+                    }
+
+                    readStream.once('error', onError);
+                    writeStream.once('error', onError);
+
+                    writeStream.once('close', function(details) 
+                    {
+                        if (!errorSent)
+                        {
+                            callback(null, details);
+                        }
+                    });
+
+                    readStream.pipe(writeStream);
                 }
             });
         },
