@@ -201,28 +201,17 @@ module.exports = function(params, config)
                 callback(err);
             }
         },
-        putObject: function(user, filename, callback)
+        putObject: function(user, filename, readStream, callback)
         {
-            // Unlike Manta (where you create a write stream and return it to the caller to write to it), here
-            // we need to pass a readableStream to S3.
-            //
-            // For multipart upload where we currenty pipe multiple read streams sequentially to the upload write stream, we could
-            // instead create a transform stream to logically concatenate those multiple read streams into a single read stream
-            // (opening each new read stream at the end of the previous stream), then s3.putObject could process that meta-read-stream. 
-            //
-            // See:
-            //    https://nodejs.org/api/stream.html#stream_implementing_a_transform_stream 
-            //    https://github.com/sedenardi/node-stream-concat/blob/master/index.js
-            //
             var fullPath = toSafeLocalPath(user.account_id, user.app_id, filename);
             log.info("Putting object:", fullPath);
 
-            var options = { Bucket: params.bucket, Key: fullPath, Body: someDataStream }
+            var options = { Bucket: params.bucket, Key: fullPath, Body: readStream }
 
-            s3.putObject(options, function(err, data) 
+            s3.upload(options, function(err, data) 
             {
-                // !!!
                 log.info("putObject response:", data);
+                callback(err, data);
             });
         },
         copyObject: function(user, filename, newFilename, callback)
