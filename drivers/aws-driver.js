@@ -192,7 +192,17 @@ module.exports = function(params, config)
                     // !!! We might want to look at >300 statusCode values here to send an error back instead.
                     //
                     callback(null, stream, statusCode, null, headers);
-                })
+                });
+                req.on('error', function(err)
+                {
+                    log.error("Error on getObject request", err);
+                    callback(err);
+                });
+                stream.on('error', function(err)
+                {
+                    log.error("Error on getObject stream", err);
+                    callback(err);
+                });
             }
             catch (error)
             {
@@ -216,13 +226,29 @@ module.exports = function(params, config)
         },
         copyObject: function(user, filename, newFilename, callback)
         {
-        },
-        moveObject: function(user, filename, newFilename, callback)
-        {
-            // !!! No moveObject in S3 - do copyObject + deleteObject
+            var fullPathSrc = toSafeLocalPath(user.account_id, user.app_id, filename);
+            var fullPathDst = toSafeLocalPath(user.account_id, user.app_id, newFilename);
+
+            var options = { Bucket: params.bucket, CopySource: "/" + params.bucket + "/" + fullPathSrc, Key: fullPathDst }
+
+            s3.copyObject(options, function(err, data) 
+            {
+                log.info("copyObject response:", data);
+                callback(err);
+            });
         },
         deleteObject: function(user, filename, callback)
         {
+            var fullPath = toSafeLocalPath(user.account_id, user.app_id, filename);
+            log.info("Deleting object:", fullPath);
+
+            var options = { Bucket: params.bucket, Key: fullPath }
+
+            s3.deleteObject(options, function(err, data) 
+            {
+                log.info("deleteObject response:", data);
+                callback(err, data);
+            });
         },
         getObjectMetaData: function(user, filename, callback)
         {
