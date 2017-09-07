@@ -15,22 +15,15 @@ var log = require('./../lib/logger').getLogger("file-driver");
 
 module.exports = function(params, config)
 {
-    var basePath = params.basePath;
-
-    log.info("Using file store, basePath:", basePath);
+    log.info("Using file store, basePath:", params.basePath);
 
     var maxConcurrency = config.get('MAX_CONCURRENCY');
 
-    function getEntryDetails(user, fullpath)
+    function getEntryDetails(fullpath)
     {
-        var userPath = path.posix.join(basePath, user.account_id);
-        if (user.app_id)
-        {
-            userPath = path.posix.join(userPath, user.app_id);
-        } 
-
         var fStat = fs.statSync(fullpath); // !!! What if not found?
-        var displayPath = "/" + path.relative(userPath, fullpath);
+
+        var displayPath = "/" + path.relative(params.basePath, fullpath);
 
         var item = { };
         item[".tag"] = fStat.isFile() ? "file" : "folder";
@@ -55,61 +48,42 @@ module.exports = function(params, config)
         return item;
     }
 
-    function toSafePath(filePath)
+    function toLocalPath (thePath)
     {
-        // path.posix.normalize will move any ../ to the front, and the regex will remove them.
+        // Do we need to change separator for DOS/Windows?  Do we care?
         //
-        var safePath = path.posix.normalize(filePath).replace(/^(\.\.[\/\\])+/, '');
-
+        var localPath = path.posix.join(params.basePath, thePath);
         if (path.sep != '/')
         {
             // Replace forward slash with local platform seperator
             //
-            safePath = filePath.replace(/[\/]/g, path.sep);
+            localPath = localPath.replace(/[\/]/g, path.sep);
         }
 
-        return safePath;
-    }
-
-    function toSafeLocalPath(account_id, app_id, filePath)
-    {
-        if (app_id)
-        {
-            return path.posix.join(basePath, account_id, app_id, toSafePath(filePath)); 
-        }
-        else
-        {
-            return path.posix.join(basePath, account_id, toSafePath(filePath));
-        }
+        return localPath;
     }
 
     var driver = 
     {
         provider: "file",
-        createDirectory: function(user, dirPath, callback)
+        createDirectory: function(dirPath, callback)
         {
-            var fullPath = toSafeLocalPath(user.account_id, user.app_id, dirPath); 
-
-            fs.mkdirs(fullPath, function(err)
+            fs.mkdirs(toLocalPath(dirPath), function(err)
             {
                 callback(err);
             });
         },
-        traverseDirectory: function(user, dirPath, recursive, onEntry, callback)
+        traverseDirectory: function(dirPath, recursive, onEntry, callback)
         {
             var stopped = false;
 
             var q = async.queue(function(task, done) 
             {
-                var fullPath = toSafeLocalPath(user.account_id, user.app_id, task.dirpath);
+                var fullPath = toLocalPath(task.dirpath);
 
                 fs.readdir(fullPath, function(err, files) 
                 {
-                    // If the error is 'not found' and the dir in question is the root dir, we're just
-                    // going to ignore that and return an empty dir lising (just means we haven't created
-                    // this user/app path yet because it hasn't been used yet).
-                    //
-                    if (err && ((err.code !== 'ENOENT') || (task.dirpath !== '')))
+                    if (err && (err.code !== 'ENOENT'))
                     {
                         done(err);
                     }
@@ -120,7 +94,7 @@ module.exports = function(params, config)
                             for (var i = 0; i < files.length; i++)
                             {
                                 var file = files[i];
-                                var entry = getEntryDetails(user, path.posix.join(fullPath, file));
+                                var entry = getEntryDetails(path.posix.join(fullPath, file));
                                 log.debug("Entry", entry);
 
                                 if (onEntry(entry))
@@ -153,7 +127,26 @@ module.exports = function(params, config)
 
             q.push({ dirpath: dirPath });
         },
-        getObject: function(user, filename, requestHeaders, callback)
+        getObjectMetaData: function(filePath, callback)
+        {
+            try
+            {
+                callback(null, getEntryDetails(toLocalPath(filePath)));
+            }
+            catch (err)
+            {
+                log.error("Got err in getObjectMetaData:", err);
+                if (err.code == 'ENOENT')
+                {
+                    callback(null, null);
+                }
+                else
+                {
+                    callback(err);
+                }
+            }
+        },
+        getObject: function(filePath, requestHeaders, callback)
         {
             // requestHeaders is optional
             //
@@ -163,11 +156,13 @@ module.exports = function(params, config)
                 requestHeaders = null;
             }
 
-            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
-
             try
             {
-                var stats = fs.statSync(filePath);
+                var localPath = toLocalPath(filePath);
+
+                log.info("Getting object at path:", localPath);
+
+                var stats = fs.statSync(localPath);
                 if (stats.isDirectory())
                 {
                     // !!! This should only be called for objects (not directories).  Maybe look at what DropBox/Manta do.
@@ -182,7 +177,7 @@ module.exports = function(params, config)
                     var respHeaders = {};
 
                     respHeaders['content-type'] = mimeTypes.lookup(filePath) || 'application/octet-stream';
-                    respHeaders['content-md5'] = md5File.sync(filePath);
+                    respHeaders['content-md5'] = md5File.sync(localPath);
                     respHeaders['etag'] = respHeaders['content-md5'];
                     respHeaders['content-length'] = stats.size;
                     respHeaders['last-modified'] = stats.mtime.toUTCString();
@@ -270,7 +265,7 @@ module.exports = function(params, config)
 
                         if (!respSent)
                         {
-                            callback(null, fs.createReadStream(filePath, readStreamOpts), respCode, respMessage, respHeaders);
+                            callback(null, fs.createReadStream(localPath, readStreamOpts), respCode, respMessage, respHeaders);
                         }
                     }
                 }
@@ -279,6 +274,7 @@ module.exports = function(params, config)
             {
                 if (err.code === 'ENOENT')
                 {
+                    log.error("Not fount in getObject", err);
                     callback(null, null, 404, 'Not Found');
                 }
                 else
@@ -287,11 +283,9 @@ module.exports = function(params, config)
                 }
             }
         },
-        putObject: function(user, filename, readStream, callback)
+        putObject: function(filePath, readStream, callback)
         {
-            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
-
-            fs.ensureDir(path.dirname(filePath), function(err)
+            fs.ensureDir(path.dirname(toLocalPath(filePath)), function(err)
             {
                 if (err)
                 {
@@ -301,7 +295,7 @@ module.exports = function(params, config)
                 {
                     // !!! May need to use mode r+ (instead of default w) to overwrite existing file
                     //
-                    var writeStream = fs.createWriteStream(filePath);
+                    var writeStream = fs.createWriteStream(toLocalPath(filePath));
 
                     var errorSent = false;
 
@@ -331,54 +325,26 @@ module.exports = function(params, config)
                 }
             });
         },
-        copyObject: function(user, filename, newFilename, callback)
+        copyObject: function(filePath, newFilePath, callback)
         {
-            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
-            var newFilePath = toSafeLocalPath(user.account_id, user.app_id, newFilename);
-            
-            fs.copy(filePath, newFilePath, function(err) // Creates directories as needed
+            fs.copy(toLocalPath(filePath), toLocalPath(newFilePath), function(err) // Creates directories as needed
             {
                 callback(err);
             });
         },
-        moveObject: function(user, filename, newFilename, callback)
+        moveObject: function(filePath, newFilePath, callback)
         {
-            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
-            var newFilePath = toSafeLocalPath(user.account_id, user.app_id, newFilename);
-
-            fs.move(filePath, newFilePath, function(err) // Creates directories as needed
+            fs.move(toLocalPath(filePath), toLocalPath(newFilePath), function(err) // Creates directories as needed
             {
                 callback(err);
             });
         },
-        deleteObject: function(user, filename, callback)
+        deleteObject: function(filePath, callback)
         {
-            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
-
-            fs.remove(filePath, function(err)
+            fs.remove(toLocalPath(filePath), function(err)
             {
                 callback(err)
             });
-        },
-        getObjectMetaData: function(user, filename, callback)
-        {
-            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
-
-            try
-            {
-                callback(null, getEntryDetails(user, filePath));
-            }
-            catch (err)
-            {
-                if (err.code == 'ENOENT')
-                {
-                    callback(null, null);
-                }
-                else
-                {
-                    callback(err);
-                }
-            }
         },
     }
 

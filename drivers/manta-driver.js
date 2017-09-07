@@ -66,9 +66,7 @@ var manta = require('manta');
 
 module.exports = function(params, config)
 {
-    var basePath = params.basePath;
-
-    log.debug("Using Manta store, basePath:", basePath);
+    log.debug("Using Manta store, basePath:", params.basePath);
 
     var maxConcurrency = config.get('MAX_CONCURRENCY');
 
@@ -92,42 +90,12 @@ module.exports = function(params, config)
         log: log
     });
 
-    function toSafePath(filePath)
+    function toMantaPath(filePath)
     {
-        // path.posix.normalize will move any ../ to the front, and the regex will remove them.
-        //
-        var safePath = path.posix.normalize(filePath).replace(/^(\.\.[\/\\])+/, '');
-
-        if (path.sep != '/') // !!! WTF?
-        {
-            // Replace forward slash with local platform seperator
-            //
-            safePath = filePath.replace(/[\/]/g, path.sep);
-        }
-
-        return safePath;
+        return path.posix.join(params.basePath, filePath);
     }
 
-    function toSafeLocalPath(account_id, app_id, filePath)
-    {
-        // !!! This forms a path of basePath/account_id/app_id/xxxxx - For scale, we assume the account_id
-        //     is a GUID (randomly distributed digits).  In order to keep directories from getting too large, 
-        //     we can break down the path further using the first three pairs of characters from the GUID, for
-        //     a path like: basePath/AB/CD/EF/GHIJKLxxx/app_id/xxxxx.  In that model, with 100m users acounts,
-        //     the first two levels of directories will be "full" (256 entries), and the third level will contain
-        //     an average of 6 accounts.
-        //
-        if (app_id)
-        {
-            return path.posix.join(basePath, account_id, app_id, toSafePath(filePath)); 
-        }
-        else
-        {
-            return path.posix.join(basePath, account_id, toSafePath(filePath));
-        }
-    }
-
-    function getEntryDetails(user, mantaEntry)
+    function getEntryDetails(mantaEntry)
     {
         // Manta object
         /*
@@ -153,14 +121,7 @@ module.exports = function(params, config)
         */
 
         var fullpath = path.posix.join(mantaEntry.parent, mantaEntry.name);
-
-        var userPath = path.posix.join(basePath, user.account_id);
-        if (user.app_id)
-        {
-            userPath = path.posix.join(userPath, user.app_id);
-        } 
-
-        var displayPath = "/" + path.relative(userPath, fullpath);
+        var displayPath = "/" + path.relative(params.basePath, fullpath);
 
         // Convert to Dropbox form
         //
@@ -191,22 +152,22 @@ module.exports = function(params, config)
     var driver = 
     {
         provider: "manta",
-        createDirectory: function(user, dirPath, callback)
+        createDirectory: function(dirPath, callback)
         {
-            var fullPath = toSafeLocalPath(user.account_id, user.app_id, dirPath); 
+            var mantaDirPath = toMantaPath(dirPath); 
 
-            client.mkdirp(fullPath, function(err)
+            client.mkdirp(mantaDirPath, function(err)
             {
                 callback(err);
             });
         },
-        traverseDirectory: function(user, dirPath, recursive, onEntry, callback)
+        traverseDirectory: function(dirPath, recursive, onEntry, callback)
         {
             var stopped = false;
 
             var q = async.queue(function(task, done) 
             {
-                var fullPath = toSafeLocalPath(user.account_id, user.app_id, task.dirpath);
+                var mantaDirPath = toMantaPath(task.dirpath);
 
                 // !!! It appears from the source code that client.ls will make multiple underlying REST API
                 //     calls and page through the entries without us having to do anything special.
@@ -214,7 +175,7 @@ module.exports = function(params, config)
                 //         https://github.com/joyent/node-manta/blob/master/lib/client.js
                 //
                 var options = {};
-                client.ls(fullPath, options, function(err, res)
+                client.ls(mantaDirPath, options, function(err, res)
                 {
                     if (err)
                     {
@@ -238,7 +199,7 @@ module.exports = function(params, config)
                             if (!stopped)
                             {
                                 log.info("Traverse got item:", item);
-                                var entry = getEntryDetails(user, item);
+                                var entry = getEntryDetails(item);
                                 log.debug("Entry", entry);
 
                                 if (onEntry(entry))
@@ -285,170 +246,12 @@ module.exports = function(params, config)
 
             q.push({ dirpath: dirPath });
         },
-        getObject: function(user, filename, requestHeaders, callback)
+        getObjectMetaData: function(filename, callback)
         {
-            // requestHeaders is optional
-            //
-            if (typeof callback === 'undefined')
-            {
-                callback = requestHeaders;
-                requestHeaders = null;
-            }
+            var fileMantaPath = toMantaPath(filename);
 
-            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
-
-            if (requestHeaders)
-            {
-                log.info("getObject got headers:", requestHeaders);
-            }
-
-            var options = { headers: lodash.pick(requestHeaders, ['if-modified-since', 'if-none-match', 'if-match', 'range']) };
-
-            log.info("Calling client.get with options:", options);
-
-            client.get(filePath, options, function(err, stream, res)
-            {
-                if (err)
-                {
-                    if (err.code == 'ResourceNotFound')
-                    {
-                        callback(null, null, 404, 'Not Found');
-                    }
-                    else if (err.code === 'RequestedRangeNotSatisfiableError')
-                    {
-                        callback(null, null, 416, "Range Not Satisfiable");
-                    }
-                    else if (options.headers.range && (err.code === 'PreconditionFailed') && (err.message.indexOf('if-match') !== -1))
-                    {
-                        // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Match
-                        //
-                        // When the If-Match precondition fails when doing a Range request, the correct response is...
-                        //
-                        callback(null, null, 416, "Range Not Satisfiable");
-                    }
-                    else
-                    {
-                        log.error(err);
-                        callback(err);
-                    }
-                }
-                else
-                {
-                    callback(null, stream, res.statusCode, res.statusMessage, res.headers);
-                }
-            });
-        },
-        putObject: function(user, filename, readStream, callback)
-        {
-            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
-
-            client.mkdirp(path.dirname(filePath), function(err)
-            {
-                if (err)
-                {
-                    callback(err);
-                }
-                else
-                {
-                    // Set the Content-Type from the filename
-                    log.info("Setting mime type to:", mimeTypes.lookup(filePath));
-
-                    var options = { type: mimeTypes.lookup(filePath) || 'application/octet-stream' };
-                    var writeStream = client.createWriteStream(filePath, options);
-
-                    var errorSent = false;
-
-                    function onError(err)
-                    {
-                        if (!errorSent)
-                        {
-                            errorSent = true;
-                            readStream.unpipe();
-                            writeStream.end();
-                            callback(err);
-                        }
-                    }
-
-                    readStream.once('error', onError);
-                    writeStream.once('error', onError);
-
-                    writeStream.once('close', function(details) 
-                    {
-                        if (!errorSent)
-                        {
-                            callback(null, details);
-                        }
-                    });
-
-                    readStream.pipe(writeStream);
-                }
-            });
-        },
-        copyObject: function(user, filename, newFilename, callback)
-        {
-            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename); 
-            var newFilePath = toSafeLocalPath(user.account_id, user.app_id, newFilename); 
-            
-            client.mkdirp(path.dirname(newFilePath), function(err)
-            {
-                if (err)
-                {
-                    callback(err);
-                }
-                else
-                {
-                    client.ln(filePath, newFilePath, function(err) 
-                    {
-                        callback(err);
-                    });
-                }
-            });
-        },
-        moveObject: function(user, filename, newFilename, callback)
-        {
-            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename); 
-            var newFilePath = toSafeLocalPath(user.account_id, user.app_id, newFilename); 
-
-            client.mkdirp(path.dirname(newFilePath), function(err)
-            {
-                if (err)
-                {
-                    callback(err);
-                }
-                else
-                {
-                    client.ln(filePath, newFilePath, function(err) 
-                    {
-                        if (err)
-                        {
-                            callback(err);
-                        }
-                        else
-                        {
-                            client.unlink(filePath, function(err)
-                            {
-                                callback(err);
-                            });
-                        }
-                    });
-                }
-            });
-        },
-        deleteObject: function(user, filename, callback)
-        {
-            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
-
-            client.unlink(filePath, function(err)
-            {
-                callback(err);
-            });
-        },
-        getObjectMetaData: function(user, filename, callback)
-        {
-            var filePath = toSafeLocalPath(user.account_id, user.app_id, filename);
-
-            var parentPath = path.dirname(filePath);
-            var filename = path.basename(filePath);
+            var parentPath = path.dirname(fileMantaPath);
+            var filename = path.basename(fileMantaPath);
 
             var options = {};
 
@@ -502,7 +305,7 @@ module.exports = function(params, config)
             //     } 
             // }
             //
-            client.info(filePath, options, function(err, info)
+            client.info(fileMantaPath, options, function(err, info)
             {
                 if (err)
                 {
@@ -537,7 +340,7 @@ module.exports = function(params, config)
 
                     entry["mtime"] = new Date(info.headers["last-modified"]).toISOString();
 
-                    callback(null, getEntryDetails(user, entry));
+                    callback(null, getEntryDetails(entry));
                 }
             });
 
@@ -573,7 +376,7 @@ module.exports = function(params, config)
                     res.once('entry', function(item)
                     {
                         // The first entry is the one we want
-                        entry = getEntryDetails(user, item);
+                        entry = getEntryDetails(item);
                         log.info("Entry", entry);
                     });
 
@@ -590,7 +393,165 @@ module.exports = function(params, config)
                 }
             });
             */
-        }
+        },
+        getObject: function(filename, requestHeaders, callback)
+        {
+            // requestHeaders is optional
+            //
+            if (typeof callback === 'undefined')
+            {
+                callback = requestHeaders;
+                requestHeaders = null;
+            }
+
+            var mantaFilePath = toMantaPath(filename);
+
+            if (requestHeaders)
+            {
+                log.info("getObject got headers:", requestHeaders);
+            }
+
+            var options = { headers: lodash.pick(requestHeaders, ['if-modified-since', 'if-none-match', 'if-match', 'range']) };
+
+            log.info("Calling client.get with options:", options);
+
+            client.get(mantaFilePath, options, function(err, stream, res)
+            {
+                if (err)
+                {
+                    if (err.code == 'ResourceNotFound')
+                    {
+                        callback(null, null, 404, 'Not Found');
+                    }
+                    else if (err.code === 'RequestedRangeNotSatisfiableError')
+                    {
+                        callback(null, null, 416, "Range Not Satisfiable");
+                    }
+                    else if (options.headers.range && (err.code === 'PreconditionFailed') && (err.message.indexOf('if-match') !== -1))
+                    {
+                        // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Match
+                        //
+                        // When the If-Match precondition fails when doing a Range request, the correct response is...
+                        //
+                        callback(null, null, 416, "Range Not Satisfiable");
+                    }
+                    else
+                    {
+                        log.error(err);
+                        callback(err);
+                    }
+                }
+                else
+                {
+                    callback(null, stream, res.statusCode, res.statusMessage, res.headers);
+                }
+            });
+        },
+        putObject: function(filename, readStream, callback)
+        {
+            var mantaFilePath = toMantaPath(filename);
+
+            client.mkdirp(path.dirname(mantaFilePath), function(err)
+            {
+                if (err)
+                {
+                    callback(err);
+                }
+                else
+                {
+                    // Set the Content-Type from the filename
+                    log.info("Setting mime type to:", mimeTypes.lookup(mantaFilePath));
+
+                    var options = { type: mimeTypes.lookup(mantaFilePath) || 'application/octet-stream' };
+                    var writeStream = client.createWriteStream(mantaFilePath, options);
+
+                    var errorSent = false;
+
+                    function onError(err)
+                    {
+                        if (!errorSent)
+                        {
+                            errorSent = true;
+                            readStream.unpipe();
+                            writeStream.end();
+                            callback(err);
+                        }
+                    }
+
+                    readStream.once('error', onError);
+                    writeStream.once('error', onError);
+
+                    writeStream.once('close', function(details) 
+                    {
+                        if (!errorSent)
+                        {
+                            callback(null, details);
+                        }
+                    });
+
+                    readStream.pipe(writeStream);
+                }
+            });
+        },
+        copyObject: function(filename, newFilename, callback)
+        {
+            var fileMantaPath = toMantaPath(filename); 
+            var newFileMantaPath = toMantaPath(newFilename); 
+            
+            client.mkdirp(path.dirname(newFileMantaPath), function(err)
+            {
+                if (err)
+                {
+                    callback(err);
+                }
+                else
+                {
+                    client.ln(fileMantaPath, newFileMantaPath, function(err) 
+                    {
+                        callback(err);
+                    });
+                }
+            });
+        },
+        moveObject: function(filename, newFilename, callback)
+        {
+            var fileMantaPath = toMantaPath(filename); 
+            var newFileMantaPath = toMantaPath(newFilename); 
+
+            client.mkdirp(path.dirname(newFileMantaPath), function(err)
+            {
+                if (err)
+                {
+                    callback(err);
+                }
+                else
+                {
+                    client.ln(fileMantaPath, newFileMantaPath, function(err) 
+                    {
+                        if (err)
+                        {
+                            callback(err);
+                        }
+                        else
+                        {
+                            client.unlink(fileMantaPath, function(err)
+                            {
+                                callback(err);
+                            });
+                        }
+                    });
+                }
+            });
+        },
+        deleteObject: function(filename, callback)
+        {
+            var fileMantaPath = toMantaPath(filename);
+
+            client.unlink(fileMantaPath, function(err)
+            {
+                callback(err);
+            });
+        },
     }
 
     return driver;

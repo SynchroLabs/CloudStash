@@ -14,7 +14,7 @@ var log = loggerModule.getLogger('Test');
 
 var _testSecret = "test";
 
-var driver; // = "manta";
+var driver; // "aws"; // = "manta";
 
 var _testConfig;
 var _testTimeout = 2000;
@@ -32,6 +32,11 @@ if (driver === "manta")
   // trigger round trips to Manta, which from a machine not running in the Joyent datacenter can take a fair amount
   // of time to complete).
   //
+  _testTimeout = 20000;
+}
+else if (driver === "aws")
+{
+  _testConfig = require('./../lib/config').getConfig('config_s3.json');
   _testTimeout = 20000;
 }
 else

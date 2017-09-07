@@ -10,16 +10,12 @@ var uuidv4 = require('uuid/v4');
 //
 module.exports = function(config, driver)
 {
-    var log = require('./logger').getLogger("bridge");
+    var _maxConcurrency = config.get('MAX_CONCURRENCY');
 
-    var root;
+    var log = require('./../lib/logger').getLogger("bridge");
 
     var bridge =
     {
-        setRoot: function(theRoot)
-        {
-            root = theRoot;
-        },
         getEntrySortKey: function(entry)
         {
             if (driver.getEntrySortKey)
@@ -57,53 +53,45 @@ module.exports = function(config, driver)
         {
             return (!item1 || (bridge.getEntrySortKey(item1) < bridge.getEntrySortKey(item2)));
         },
-        createDirectory: function (user, dirPath, callback)
+        createDirectory: function (dirPath, callback)
         {
-            if (dirPath === '/')
-            {
-                // Don't need/want to create root directory
-                callback();
-            }
-            else
-            {
-                driver.createDirectory(user, dirPath, callback);
-            }
+            driver.createDirectory(dirPath, callback);
         },
-        deleteDirectory: function (user, dirPath, callback)
+        deleteDirectory: function (dirPath, callback)
         {
             if (driver.deleteDirectory)
             {
-                driver.deleteDirectory(user, dirPath, callback);
+                driver.deleteDirectory(dirPath, callback);
             }
             else // Fall back to object method (driver only overrides if dir operation is different)
             {
-                driver.deleteObject(user, dirPath, callback);
+                driver.deleteObject(dirPath, callback);
             }
         },
-        getDirectoryMetaData: function(user, dirPath, callback)
+        getDirectoryMetaData: function(dirPath, callback)
         {
             if (driver.getDirectoryMetaData)
             {
-                driver.getDirectoryMetaData(user, dirPath, callback);
+                driver.getDirectoryMetaData(dirPath, callback);
             }
             else // Fall back to object method (driver only overrides if dir operation is different)
             {
-                driver.getObjectMetaData(user, dirPath, callback);
+                driver.getObjectMetaData(dirPath, callback);
             }
         },
-        getObjectMetaData: function (user, filename, callback)
+        getObjectMetaData: function (filePath, callback)
         {
-            driver.getObjectMetaData(user, filename, callback);
+            driver.getObjectMetaData(filePath, callback);
         },
-        getMetaData: function(user, fileOrDirPath, type, callback)
+        getMetaData: function(fileOrDirPath, type, callback)
         {
             if (type === "file")
             {
-                driver.getObjectMetaData(user, fileOrDirPath, callback);
+                driver.getObjectMetaData(fileOrDirPath, callback);
             }
             else if (type === "folder")
             {
-                bridge.getDirectoryMetaData(user, fileOrDirPath, callback);
+                bridge.getDirectoryMetaData(fileOrDirPath, callback);
             }
             else if (type === null)
             {
@@ -114,7 +102,7 @@ module.exports = function(config, driver)
                 {
                     // Try getDirectoryMetaData, and if that fails (not found), try getObjectMetaData
                     //
-                    driver.getDirectoryMetaData(user, fileOrDirPath, function(err, entry)
+                    driver.getDirectoryMetaData(fileOrDirPath, function(err, entry)
                     {
                         if (err || entry)
                         {
@@ -122,29 +110,30 @@ module.exports = function(config, driver)
                         }
                         else
                         {
-                            driver.getObjectMetaData(user, fileOrDirPath, callback);
+                            driver.getObjectMetaData(fileOrDirPath, callback);
                         }
                     });
                 }
                 else
                 {
-                    driver.getObjectMetaData(user, fileOrDirPath, callback);
+                    driver.getObjectMetaData(fileOrDirPath, callback);
                 }
             }
         },
-        getObject: function(user, filename, requestHeaders, callback)
+        getObject: function(filePath, requestHeaders, callback)
         {
-            driver.getObject(user, filename, requestHeaders, callback);
+            driver.getObject(filePath, requestHeaders, callback);
         },
-        putObject: function(user, filename, readStream, callback)
+        putObject: function(filePath, readStream, callback)
         {
-            driver.putObject(user, filename, readStream, callback);
+            log.info("Put object:", filePath);
+            driver.putObject(filePath, readStream, callback);
         },
-        copyObject: function(user, filename, newFilename, callback)
+        copyObject: function(filePath, newFilePath, callback)
         {
             if (driver.copyObject)
             {
-                driver.copyObject(user, filename, newFilename, callback);
+                driver.copyObject(filePath, newFilePath, callback);
             }
             else
             {
@@ -152,16 +141,15 @@ module.exports = function(config, driver)
                 callback(new Error("bridge synthetic copyObject not yet implemented"));
             }
         },
-        moveObject: function(user, filename, newFilename, callback)
+        moveObject: function(filePath, newFilePath, callback)
         {
             if (driver.moveObject)
             {
-                driver.moveObject(user, filename, newFilename, callback);
+                driver.moveObject(filePath, newFilePath, callback);
             }
             else
             {
-                log.info("Performing move in bridge via copy/delete");
-                bridge.copyObject(user, filename, newFilename, function(err)
+                bridge.copyObject(filePath, newFilePath, function(err)
                 {
                     if (err)
                     {
@@ -169,24 +157,23 @@ module.exports = function(config, driver)
                         return;
                     }
 
-                    log.info("Bridge copy for move succeeded, doing delete");
-                    bridge.deleteObject(user, filename, callback);
+                    bridge.deleteObject(filePath, callback);
                 })
             }
         },
-        deleteObject: function(user, filename, callback)
+        deleteObject: function(filePath, callback)
         {
-            driver.deleteObject(user, filename, callback);
+            driver.deleteObject(filePath, callback);
         },
-        traverseDirectory: function(user, dirPath, recursive, onEntry, callback)
+        traverseDirectory: function(dirPath, recursive, onEntry, callback)
         {
-            driver.traverseDirectory(user, dirPath, recursive, onEntry, callback);
+            driver.traverseDirectory(dirPath, recursive, onEntry, callback);
         },
-        listFolderUsingCursor: function(user, dirPath, recursive, limit, cursor, callback)
+        listFolderUsingCursor: function(dirPath, recursive, limit, cursor, callback)
         {
             if (driver.listFolderUsingCursor)
             {
-                driver.listFolderUsingCursor(user, dirPath, recursive, limit, cursor, callback);
+                driver.listFolderUsingCursor(dirPath, recursive, limit, cursor, callback);
             }
             else // Fall back to traverse (brute force)
             {
@@ -215,7 +202,7 @@ module.exports = function(config, driver)
                     }
                 }
 
-                driver.traverseDirectory(user, dirPath, recursive, onEntry, function(err, stopped)
+                bridge.traverseDirectory(dirPath, recursive, onEntry, function(err, stopped)
                 {
                     if (err)
                     {
@@ -244,11 +231,11 @@ module.exports = function(config, driver)
                 });
             }
         },
-        getLatestCursorItem: function(user, path, recursive, callback)
+        getLatestCursorItem: function(dirPath, recursive, callback)
         {
             if (driver.getLatestCursorItem)
             {
-                driver.getLatestCursorItem(user, path, recursive, callback);
+                driver.getLatestCursorItem(dirPath, recursive, callback);
             }
             else // Fall back to traverse (brute force)
             {
@@ -272,7 +259,7 @@ module.exports = function(config, driver)
                     }
                 }
 
-                driver.traverseDirectory(user, path, recursive, onEntry, function(err, stopped)
+                bridge.traverseDirectory(dirPath, recursive, onEntry, function(err, stopped)
                 {
                     if (err)
                     {
@@ -287,15 +274,15 @@ module.exports = function(config, driver)
                 });
             }
         },
-        isAnyCursorItemNewer: function(user, path, recursive, cursorItem, callback)
+        isAnyCursorItemNewer: function(dirPath, recursive, cursorItem, callback)
         {
             if (driver.isAnyCursorItemNewer)
             {
-                driver.isAnyCursorItemNewer(user, path, recursive, cursorItem, callback);
+                driver.isAnyCursorItemNewer(dirPath, recursive, cursorItem, callback);
             }
             else if (driver.getLatestCursorItem)
             {
-                driver.getLatestCursorItem(user, path, recursive, function(err, latestCursorItem)
+                driver.getLatestCursorItem(dirPath, recursive, function(err, latestCursorItem)
                 {
                     callback(err, bridge.isCursorItemNewer(cursorItem, latestCursorItem));
                 });
@@ -307,12 +294,10 @@ module.exports = function(config, driver)
                     return bridge.isCursorItemNewer(cursorItem, bridge.getCursorItem(entry));
                 }
 
-                driver.traverseDirectory(user, path, recursive, onEntry, function(err, stopped)
+                bridge.traverseDirectory(dirPath, recursive, onEntry, function(err, stopped)
                 {
                     if (err)
                     {
-                        // !!! req logger?
-                        log.error("Traversal error on isAnyCursorItemNewer:", err);
                         callback(err);
                     }
                     else
@@ -322,7 +307,7 @@ module.exports = function(config, driver)
                 });
             }
         },
-        getObjectMetaDataWithRetry: function(user, filename, isFolder, callback)
+        getObjectMetaDataWithRetry: function(filePath, isFolder, callback)
         {
             // There are a number of cases where we do a file/folder create operation (create/move/copy/etc) where we
             // know that the resulting file/folder should exist afterward, but it may not be immediately visible to the 
@@ -347,7 +332,7 @@ module.exports = function(config, driver)
             },
             function(callback)
             {
-                bridge.getMetaData(user, filename, isFolder ? "folder" : "file", function(err, entry)
+                bridge.getMetaData(filePath, isFolder ? "folder" : "file", function(err, entry)
                 {
                     if (!err && !entry)
                     {
@@ -365,52 +350,59 @@ module.exports = function(config, driver)
                 callback(err, entry);
             });
         },        
-        startMultipartUpload: function(user, readStream, callback)
+        startMultipartUpload: function(uploadDir, readStream, callback)
         {
             if (driver.startMultipartUpload)
             {
-                driver.startMultipartUpload(user, readStream, callback);
+                driver.startMultipartUpload(readStream, callback);
             }
             else
             {
                 var uploadId = uuidv4();
-                var uploadPath = path.join("uploads", uploadId, "0.bin");
+                var uploadPath = path.join(uploadDir, uploadId, "0.bin");
 
-                root.putObjectStream(user, uploadPath, readStream, function(err, details)
+                driver.putObject(uploadPath, readStream, function(err, details)
                 {
                     callback(err, uploadId);
                 });
             }
         },
-        multipartUpload: function(user, readStream, uploadId, offset, callback)
+        multipartUpload: function(uploadDir, readStream, uploadId, offset, callback)
         {
             if (driver.multipartUpload)
             {
-                driver.multipartUpload(user, readStream, uploadId, offset, callback);
+                driver.multipartUpload(readStream, uploadId, offset, callback);
             }
             else
             {
-                var uploadPath = path.join("uploads", uploadId, offset.toString() + ".bin");
-                root.putObjectStream(user, uploadPath, readStream, callback);
+                var uploadPath = path.join(uploadDir, uploadId, offset.toString() + ".bin");
+                driver.putObject(uploadPath, readStream, callback);
             }
         },
-        finishMultipartUpload: function(user, uploadId, filename, callback)
+        finishMultipartUpload: function(uploadDir, uploadId, filePath, callback)
         {
             if (driver.finishMultipartUpload)
             {
-                driver.finishMultipartUpload(user, uploadId, filename, callback);
+                driver.finishMultipartUpload(uploadId, filePath, callback);
             }
             else
             {
-                var uploadDirPath = path.join("uploads", uploadId);
+                var uploadDirPath = path.join(uploadDir, uploadId);
 
-                root.getDirectoryEntries(user, uploadDirPath, function(err, entries)
+                var entries = [];
+
+                function onEntry(entry)
+                {
+                    entries.push(entry);
+                }
+
+                driver.traverseDirectory(uploadDirPath, false, onEntry, function(err, stopped)
                 {
                     if (err)
                     {
                         callback(err);
                     }
-                    else if (!entries)
+                    else if (entries.length === 0)
                     {
                         callback(new Error("No files uploaded with the id:", uploadId));
                     }
@@ -428,6 +420,8 @@ module.exports = function(config, driver)
                         // !!! Verify that we start at 0 and there are no holes
                         //
 
+                        var entriesToBeDeleted = [];
+
                         var multiReadStream = new stream.Transform();
                         multiReadStream._transform = function (chunk, encoding, done) 
                         {
@@ -441,7 +435,7 @@ module.exports = function(config, driver)
                             {
                                 log.info("Processing upload entry:", entry);
                                 var currentFile = path.join(uploadDirPath, entry.name);
-                                root.getObjectStream(user, currentFile, function(err, readStream)
+                                driver.getObject(currentFile, function(err, readStream)
                                 {
                                     readStream.on('end', function ()
                                     {
@@ -452,6 +446,8 @@ module.exports = function(config, driver)
                                     log.info("Pipe stream for entry:", entry);
                                     readStream.pipe(multiReadStream, { end: false });
                                 });
+
+                                entriesToBeDeleted.push(entry);
                             }
                             else
                             {
@@ -462,7 +458,7 @@ module.exports = function(config, driver)
 
                         nextStream();
 
-                        driver.putObject(user, filename, multiReadStream, function(err, details)
+                        driver.putObject(filePath, multiReadStream, function(err, details)
                         {
                             if (err)
                             {
@@ -473,20 +469,48 @@ module.exports = function(config, driver)
 
                             log.info("Done uploading multipart object");
 
-                            root.deleteDirectory(user, uploadDirPath, function(err)
+                            async.eachLimit(entriesToBeDeleted, _maxConcurrency, function(entry, callback)
                             {
-                                // We hope this worked, but we're not going to error out just
-                                // because the upload dir delete failed.
-                                //
+                                driver.deleteObject(entry.path_display, callback);
+                            },
+                            function (err) 
+                            {
                                 if (err)
                                 {
-                                    log.error("Failed to delete upload dir:", uploadDirPath, err);
-                                }
+                                    log.error("Error deleting upload part:", err);
 
-                                bridge.getObjectMetaDataWithRetry(user, filename, false, function(err, srcEntry)
+                                    // We don't bail just because we couldn't clean up.  And no use attempting to delete
+                                    // the upload dir since it's not empty, so let's just get out of here...
+                                    //
+                                    bridge.getObjectMetaDataWithRetry(filePath, false, function(err, srcEntry)
+                                    {
+                                        callback(null, srcEntry);
+                                    });
+                                }
+                                else
                                 {
-                                    callback(null, srcEntry);
-                                });
+                                    log.info("Uploaded parts deleted")
+
+                                    bridge.deleteDirectory(uploadDirPath, function(err)
+                                    {
+                                        // We hope this worked, but we're not going to error out just
+                                        // because the upload dir delete failed.
+                                        //
+                                        if (err)
+                                        {
+                                            log.error("Failed to delete upload dir:", uploadDirPath, err);
+                                        }
+                                        else
+                                        {
+                                            log.info("Upload directory deleted:", uploadDirPath);
+                                        }
+
+                                        bridge.getObjectMetaDataWithRetry(filePath, false, function(err, srcEntry)
+                                        {
+                                            callback(null, srcEntry);
+                                        });
+                                    })
+                                }
                             });
                         });
                     }

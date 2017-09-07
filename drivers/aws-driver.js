@@ -17,29 +17,9 @@ module.exports = function(params, config)
         secretAccessKey: params.secretAccessKey
     });
 
-    log.debug('AWS S3 driver, user:: %s', params.user);
+    log.debug('AWS S3 driver, user: %s', params.user);
 
-    function toSafePath(filePath)
-    {
-        // path.posix.normalize will move any ../ to the front, and the regex will remove them.
-        //
-        var safePath = path.posix.normalize(filePath).replace(/^(\.\.[\/\\])+/, '');
-        return safePath;
-    }
-
-    function toSafeLocalPath(account_id, app_id, filePath)
-    {
-        if (app_id)
-        {
-            return path.posix.join(account_id, app_id, toSafePath(filePath)); 
-        }
-        else
-        {
-            return path.posix.join(account_id, toSafePath(filePath));
-        }
-    }
-
-    function getEntryDetails(user, s3Object)
+    function getEntryDetails(s3Object)
     {
         // S3 object
         /*
@@ -65,13 +45,7 @@ module.exports = function(params, config)
             fullpath = fullpath.slice(0, -1);
         }
 
-        var userPath = user.account_id;
-        if (user.app_id)
-        {
-            userPath = path.posix.join(userPath, user.app_id);
-        } 
-
-        var displayPath = "/" + path.relative(userPath, fullpath);
+        var displayPath = "/" + fullpath;
 
         // Convert to Dropbox form
         //
@@ -98,32 +72,30 @@ module.exports = function(params, config)
     var driver = 
     {
         provider: "aws",
-        createDirectory: function(user, dirPath, callback)
+        createDirectory: function(dirPath, callback)
         {
-            var fullPath = toSafeLocalPath(user.account_id, user.app_id, dirPath) + "/";
-            log.info("Creating folder:", fullPath);
+            log.info("Creating folder:", dirPath);
 
-            var options = { Bucket: params.bucket, Key: fullPath }
+            var options = { Bucket: params.bucket, Key: dirPath }
             s3.putObject(options, function(err, data)
             {
                 console.log("Put dir:", data)
                 callback(err);
             });
         },
-        deleteDirectory: function(user, dirPath, callback)
+        deleteDirectory: function(dirPath, callback)
         {
-            this.deleteObject(user, dirPath + "/", callback);
+            this.deleteObject(dirPath + "/", callback);
         },
-        getDirectoryMetaData: function(user, dirPath, callback)
+        getDirectoryMetaData: function(dirPath, callback)
         {
-            this.getObjectMetaData(user, dirPath + "/", callback);
+            this.getObjectMetaData(dirPath + "/", callback);
         },
-        traverseDirectory: function(user, dirPath, recursive, onEntry, callback)
+        traverseDirectory: function(dirPath, recursive, onEntry, callback)
         {
-            var fullPath = toSafeLocalPath(user.account_id, user.app_id, dirPath) + "/";
-            log.info("Traversing path:", fullPath);
+            log.info("Traversing path:", dirPath);
 
-            var options = { Bucket: params.bucket, Prefix: fullPath }
+            var options = { Bucket: params.bucket, Prefix: dirPath }
 
             if (!recursive)
             {
@@ -152,12 +124,12 @@ module.exports = function(params, config)
                     for (var i = 0; i < data.Contents.length; i++)
                     {
                         var object = data.Contents[i];
-                        if (object.Key === fullPath)
+                        if (object.Key === dirPath)
                         {
                             // This is the directory itself
                             continue;
                         }
-                        var entry = getEntryDetails(user, object);
+                        var entry = getEntryDetails(object);
                         if (onEntry(entry))
                         {
                             break;
@@ -168,12 +140,53 @@ module.exports = function(params, config)
                 }
             });
         },
-        getObject: function(user, filename, requestHeaders, callback)
+        getObjectMetaData: function(filename, callback)
         {
-            var fullPath = toSafeLocalPath(user.account_id, user.app_id, filename);
-            log.info("Getting object:", fullPath);
+            log.info("Getting object metadata:", filename);
 
-            var options = { Bucket: params.bucket, Key: fullPath }
+            var options = { Bucket: params.bucket, Key: filename }
+
+            s3.headObject(options, function(err, data)
+            {
+                if (err)
+                {
+                    if (err.code === 'NotFound')
+                    {
+                        callback(null, null);
+                    }
+                    else
+                    {
+                        log.error(err);
+                        callback(err);
+                    }
+                }
+                else 
+                {
+                    /*
+                    data = {
+                        AcceptRanges: "bytes", 
+                        ContentLength: 3191, 
+                        ContentType: "image/jpeg", 
+                        ETag: "\"6805f2cfc46c0f04559748bb039d69ae\"", 
+                        LastModified: <Date Representation>, 
+                        Metadata: {
+                        }, 
+                        VersionId: "null"
+                    }
+                    */
+                    log.info("Got object metadata:", data); // successful response
+
+                    data.Key = filename;
+                    data.Size = data.ContentLength;
+                    callback(null, getEntryDetails(data));
+                }
+            });
+        },
+        getObject: function(filename, requestHeaders, callback)
+        {
+            log.info("Getting object:", filename);
+
+            var options = { Bucket: params.bucket, Key: filename }
 
             try 
             {
@@ -211,12 +224,11 @@ module.exports = function(params, config)
                 callback(err);
             }
         },
-        putObject: function(user, filename, readStream, callback)
+        putObject: function(filename, readStream, callback)
         {
-            var fullPath = toSafeLocalPath(user.account_id, user.app_id, filename);
-            log.info("Putting object:", fullPath);
+            log.info("Putting object:", filename);
 
-            var options = { Bucket: params.bucket, Key: fullPath, Body: readStream }
+            var options = { Bucket: params.bucket, Key: filename, Body: readStream }
 
             s3.upload(options, function(err, data) 
             {
@@ -224,12 +236,9 @@ module.exports = function(params, config)
                 callback(err, data);
             });
         },
-        copyObject: function(user, filename, newFilename, callback)
+        copyObject: function(filename, newFilename, callback)
         {
-            var fullPathSrc = toSafeLocalPath(user.account_id, user.app_id, filename);
-            var fullPathDst = toSafeLocalPath(user.account_id, user.app_id, newFilename);
-
-            var options = { Bucket: params.bucket, CopySource: "/" + params.bucket + "/" + fullPathSrc, Key: fullPathDst }
+            var options = { Bucket: params.bucket, CopySource: "/" + params.bucket + "/" + filename, Key: newFilename }
 
             s3.copyObject(options, function(err, data) 
             {
@@ -237,12 +246,11 @@ module.exports = function(params, config)
                 callback(err);
             });
         },
-        deleteObject: function(user, filename, callback)
+        deleteObject: function(filename, callback)
         {
-            var fullPath = toSafeLocalPath(user.account_id, user.app_id, filename);
-            log.info("Deleting object:", fullPath);
+            log.info("Deleting object:", filename);
 
-            var options = { Bucket: params.bucket, Key: fullPath }
+            var options = { Bucket: params.bucket, Key: filename }
 
             s3.deleteObject(options, function(err, data) 
             {
@@ -250,49 +258,6 @@ module.exports = function(params, config)
                 callback(err, data);
             });
         },
-        getObjectMetaData: function(user, filename, callback)
-        {
-            var fullPath = toSafeLocalPath(user.account_id, user.app_id, filename);
-            log.info("Getting object metadata:", fullPath);
-
-            var options = { Bucket: params.bucket, Key: fullPath }
-
-            s3.headObject(options, function(err, data)
-            {
-                if (err)
-                {
-                    if (err.code === 'NotFound')
-                    {
-                        callback(null, null);
-                    }
-                    else
-                    {
-                        log.error(err);
-                        callback(err);
-                    }
-                }
-                else 
-                {
-                    /*
-                    data = {
-                        AcceptRanges: "bytes", 
-                        ContentLength: 3191, 
-                        ContentType: "image/jpeg", 
-                        ETag: "\"6805f2cfc46c0f04559748bb039d69ae\"", 
-                        LastModified: <Date Representation>, 
-                        Metadata: {
-                        }, 
-                        VersionId: "null"
-                    }
-                    */
-                    log.info("Got object metadata:", data); // successful response
-
-                    data.Key = fullPath;
-                    data.Size = data.ContentLength;
-                    callback(null, getEntryDetails(user, data));
-                }
-            });
-        }
     }
 
     return driver;
