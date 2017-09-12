@@ -14,29 +14,24 @@ var log = loggerModule.getLogger('Test');
 
 var _testSecret = "test";
 
-var driver; // "aws"; // = "manta";
+var driver;
 
 var _testConfig;
 var _testTimeout = 2000;
 
 if (driver === "manta")
 {
-  // !!! Note: Manta tests pass, but there are some timing issues (file uploaded might not appear in 
-  //     directory list or be available for download immediately, etc).  So these tests have all passed
-  //     in one run on Manta, but they don't run clean every time.  Maybe we should just add a wait in
-  //     between operations where needed (and only for Manta).
-  //
   _testConfig = require('./../lib/config').getConfig('config_manta.json');
-
-  // This keeps Mocha from timing out tests in the default 2000ms (some of the Manta driver calls we make
-  // trigger round trips to Manta, which from a machine not running in the Joyent datacenter can take a fair amount
-  // of time to complete).
-  //
   _testTimeout = 20000;
 }
 else if (driver === "aws")
 {
   _testConfig = require('./../lib/config').getConfig('config_s3.json');
+  _testTimeout = 20000;
+}
+else if (driver === "azure")
+{
+  _testConfig = require('./../lib/config').getConfig('config_azure.json');
   _testTimeout = 20000;
 }
 else

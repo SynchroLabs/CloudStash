@@ -2,6 +2,8 @@
 //
 // https://aws.amazon.com/sdk-for-node-js/
 //
+// Note that with S3, a "directory" is just an object (zero bytes) whose path ends with "/"
+//
 var log = require('./../lib/logger').getLogger("aws-driver");
 
 var path = require('path');
