@@ -4,6 +4,8 @@
 //
 // API docs: http://azure.github.io/azure-storage-node/BlobService.html
 //
+// Examples: https://docs.microsoft.com/en-us/azure/storage/blobs/storage-nodejs-how-to-use-blob-storage
+//
 // Azure doesn't have the concept of a "directory".  In the various Azure UX implementations that support a
 // "create directory" option, all those do is create a UX context in which you can create objects to which it
 // will prepend the "directory" path (but it's all virtual).  For example, if you do a "create directory" in 
@@ -28,6 +30,7 @@
 var log = require('./../lib/logger').getLogger("azure-driver");
 
 var path = require('path');
+var stream = require('stream');
 
 var azure = require('azure-storage');
 
@@ -127,6 +130,18 @@ module.exports = function(params, config)
         return item;
     }
 
+    function logResult(fnName, err, result, response)
+    {
+        if (err)
+        {
+            log.error("%s error:", fnName, err);
+        }
+        else
+        {
+            log.info("%s result:", fnName, result);
+        }
+    }
+
     var driver = 
     {
         provider: "azure",
@@ -134,7 +149,11 @@ module.exports = function(params, config)
         {
             var options = {};
             // !!! Must create any parent directories that don't exist...
-            blobService.createAppendBlobFromText(params.container, dirPath + "/" + _directoryMetadataFilename, "", options, callback)
+            blobService.createAppendBlobFromText(params.container, dirPath + "/" + _directoryMetadataFilename, "", options, function (err, result, response)
+            {
+                logResult("createAppendBlobFromText (createDirectory)", err, result, response);
+                callback(err);
+            });
         },
         deleteDirectory: function(dirPath, callback)
         {
@@ -154,7 +173,7 @@ module.exports = function(params, config)
             var options = {};
             if (!recursive)
             {
-                options.Delimiter = "/"
+                options.delimiter = "/"
             }
 
             blobService.listBlobsSegmentedWithPrefix(params.container, dirPath + "/", null, options, function(err, result, response)
@@ -231,18 +250,101 @@ module.exports = function(params, config)
         },
         getObjectMetaData: function(filename, callback)
         {
+            var options = {};
+            blobService.getBlobProperties(params.container, filename, options, function (err, result, response)
+            {
+                logResult("getBlobProperties", err, result, response);
+                if (err)
+                {
+                    if (err.statusCode === 404)
+                    {
+                        callback(null, null);
+                    }
+                    else
+                    {
+                        callback(err);
+                    }
+                }
+                else
+                {
+                    callback(null, getEntryDetails(result));
+                }
+            });
         },
         getObject: function(filename, requestHeaders, callback)
         {
+            // createReadStream()
+            //
+            // http://azure.github.io/azure-storage-node/services_blob_blobservice.core.js.html#sunlight-1-line-1634
+            //
+            // ChunkStream
+            //
+            // http://azure.github.io/azure-sdk-for-node/azure-storage-legacy/latest/blob_internal_chunkStream.js.html
+            //
+            // !!! This is kind of a train wreck.  You don't get the response back on success until after the stream
+            //     is consumed.  So we can't propagate any request status or headers like we do with the other transports.
+            //     If there is an error, you will get that immediately on the error (without getting or consuming a stream).
+            //     Presumably in the erro case the response will contain the http request details, and presumably you will
+            //     get a null stream back from the call.
+            //
+            // !!! The assumption is that if we get a stream back, then the request was a success (200 OK).  Our server logic
+            //     does a metadata request immediately before this, and that will have the headers with the detail we might
+            //     care about with respect to the blob itself (content-type, content-md5, content-length, etc).  Will will
+            //     have to handle the range request information explicity (in fact we have to do that in the call anyway, as
+            //     we would also need to convert any range indicators from the passed-in requestHeaders into options values
+            //     indicating the desired range).
+            //  
+            var options = {};
+            var readStream = blobService.createReadStream(params.container, filename, options, function (err, result, response)
+            {
+                // !!! If no err, the stream has been exhausted by now (due to a "quirk" in the implementation, the stream will
+                //     be exhuasted whether or not it is read from - it's less a "stream" and more of an "abomination that craps
+                //     out data events whenever it feels like it whether anyone is listening or not").
+                //
+                //     Anyway, it's too late to do something like: 
+                // 
+                //     callback(err, readStream, response.statusCode, null, response.headers);
+                //
+                logResult("createReadStream", err, result, response);
+                if (err)
+                {
+                    callback(err);
+                }
+            });
+
+            if (readStream)
+            {
+                log.info("getObject returning readStream");
+                callback(null, readStream, 200, null, null); // No headers (preceding metadata call will have gotten most of them)
+            }
         },
-        putObject: function(filename, callback)
+        putObject: function(filename, readStream, callback)
         {
+            var options = {};
+            var writeStream = blobService.createAppendBlobFromStream(params.container, filename, readStream, options, function (err, result, response)
+            {
+                logResult("createAppendBlobFromStream", err, result, response);
+                callback(err);
+            });
         },
         copyObject: function(filename, newFilename, callback)
         {
+            var options = {};
+            var sourceUri = blobService.getUrl(params.container, filename);
+            blobService.startCopyBlob(sourceUri, params.container, newFilename, options, function (err, result, response)
+            {
+                logResult("startCopyBlob", err, result, response);
+                callback(err);
+            });
         },
         deleteObject: function(filename, callback)
         {
+            var options = {};
+            blobService.deleteBlob(params.container, filename, options, function (err, result, response)
+            {
+                logResult("deleteBlob", err, result, response);
+                callback(err);
+            });
         },
     }
 
