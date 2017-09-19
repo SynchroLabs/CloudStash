@@ -29,6 +29,7 @@
 //
 var log = require('./../lib/logger').getLogger("azure-driver");
 
+var async = require('async');
 var path = require('path');
 var stream = require('stream');
 
@@ -80,27 +81,37 @@ module.exports = function(params, config)
 
     function getEntryDetails(azureObject)
     {
-        // azureObject
-        /* 
-        {
-            name: '1234-BEEF/000001/IMG_0746.jpg',
-            lastModified: 'Tue, 12 Sep 2017 01:53:20 GMT',
-            etag: '0x8D4F9810B79AA98',
-            contentLength: '1307098',
-            contentSettings: [Object],
-            blobType: 'BlockBlob',
-            lease: [Object],
-            serverEncrypted: 'false' 
-        }
-        */
-
-        log.info("Got azureObject:", azureObject)
+        // BlobResult for directory
+        //
+        // {
+        //     name: '1234-BEEF/000001/Photos/' 
+        // }
+        //
+        // BlobResult for object
+        // 
+        // {
+        //     name: '1234-BEEF/000001/IMG_0746.jpg',
+        //     lastModified: 'Tue, 12 Sep 2017 01:53:20 GMT',
+        //     etag: '0x8D4F9810B79AA98',
+        //     contentLength: '1307098',
+        //     contentSettings: [Object],
+        //     blobType: 'BlockBlob',
+        //     lease: [Object],
+        //     serverEncrypted: 'false' 
+        // }
+        //
+        log.info("Got Azure object (BlobResult):", azureObject)
 
         var item = { };
         item[".tag"] = "file";
 
         var fullpath = azureObject.name;
-        if (fullpath.lastIndexOf(_directoryMetadataFilename) == fullpath.length-1)
+        if (fullpath.lastIndexOf("/") === fullpath.length-1)
+        {
+            item[".tag"] = "folder";
+            fullpath = fullpath.slice(0, -1);
+        }
+        else if (fullpath.lastIndexOf(_directoryMetadataFilename) === fullpath.length-1)
         {
             item[".tag"] = "folder";
             fullpath = fullpath.slice(0, -2);
@@ -168,81 +179,103 @@ module.exports = function(params, config)
             //     create from our app - and not on storage populated some other way - we could do both to be safe, maybe
             //     driven by a config option - revisit).
             //
-            log.info("Listing blobs at prefix:", dirPath);
 
-            var options = {};
-            if (!recursive)
+            // When we do a non-recursive listBlobs, we don't get any directory information.  If we want it, we'd have to
+            // do a listBlobDirectories in order to get the blobs directly under that directory.
+            //
+            // However, when we list blobs recursively (via delimiter), we can theoretically generate a list of directories,
+            // as they will all be referenced in some part of one or more blob paths.  The trick here would be to keep track
+            // of directories that have been reported in order to not report any given directory more than once.  It appears
+            // that blobs are returned in alpha order (with upper case sorting before lower case).  If that can be relied
+            // upon, that might give is an easier way to track "new" (so far unreported) directories we encounter.
+            //
+            // This is all assuming we're not relying solely on our directory markers.  If we find a marker, then that
+            // metadata should override the "existences of a virtual directory" kind of reporting referred to above (which
+            // is more about making sure everything works in a non-surprising way when our directory markers are not present).
+            //
+
+            // !!! The implementation below ignores (or mistreats) our directory marker files, but does respect
+            //     virtual directories (non-recursive only).  Some work left to do here.
+            //
+            if (recursive)
             {
-                options.delimiter = "/"
-            }
+                log.info("Listing blobs (recursively) at prefix:", dirPath);
 
-            blobService.listBlobsSegmentedWithPrefix(params.container, dirPath + "/", null, options, function(err, result, response)
-            {
-                if (err)
+                var options = {};
+                blobService.listBlobsSegmentedWithPrefix(params.container, dirPath + "/", null, options, function(err, result, response)
                 {
-                    log.error("Error on traverseDirectory:", err);
-                    callback(err);
-                }
-                else
-                {
-                    // result in the form:
-                    /*
-                    { 
-                        entries:
-                        [ 
-                            BlobResult 
-                            {
-                                name: '1234-BEEF/000001/IMG_0746.jpg',
-                                lastModified: 'Tue, 12 Sep 2017 01:53:20 GMT',
-                                etag: '0x8D4F9810B79AA98',
-                                contentLength: '1307098',
-                                contentSettings: [Object],
-                                blobType: 'BlockBlob',
-                                lease: [Object],
-                                serverEncrypted: 'false' 
-                            },
-                            BlobResult 
-                            {
-                                name: '1234-BEEF/000001/IMG_0747.jpg',
-                                lastModified: 'Tue, 12 Sep 2017 01:53:36 GMT',
-                                etag: '0x8D4F98114DEC1AC',
-                                contentLength: '1780171',
-                                contentSettings: [Object],
-                                blobType: 'BlockBlob',
-                                lease: [Object],
-                                serverEncrypted: 'false'
-                            } 
-                        ],
-                        continuationToken: null 
-                    }
-
-                    // Or when using listBlobDirectoriesSegmentedWithPrefix:
-                    { 
-                        entries:
-                        [ 
-                            BlobResult 
-                            { 
-                                name: 'Photos/' 
-                            }
-                        ],
-                        continuationToken: null
-                    }
-                    */
-
-                    log.info("Got result:", result);
-
-                    for (var i = 0; i < result.entries.length; i++)
+                    if (!err)
                     {
-                        var entry = getEntryDetails(result.entries[i]);
-                        if (onEntry(entry))
+                        log.info("Got result:", result);
+                        for (var i = 0; i < result.entries.length; i++)
                         {
-                            break;
+                            var entry = getEntryDetails(result.entries[i]);
+                            if (onEntry(entry))
+                            {
+                                break;
+                            }
                         }
                     }
 
-                    callback();
-                }
-            });
+                    callback(err);
+                });
+            }
+            else
+            {
+                log.info("Listing blobs at prefix:", dirPath);
+
+                async.series(
+                [
+                    function(done)
+                    {
+                        // This will get the (virtual) directories in the specified directory
+                        //
+                        var dirOptions = {};
+                        blobService.listBlobDirectoriesSegmentedWithPrefix(params.container, dirPath + "/", null, dirOptions, function(err, result, response)
+                        {
+                            log.info("listBlobDirectories result:", result);
+                            if (!err)
+                            {
+                                for (var i = 0; i < result.entries.length; i++)
+                                {
+                                    var entry = getEntryDetails(result.entries[i]);
+                                    if (onEntry(entry))
+                                    {
+                                        break;
+                                    }
+                                }
+                            }
+                            done(err);
+                        });
+                    },
+                    function(done)
+                    {
+                        // This will get the blobs in the specified directory
+                        //
+                        var options = { delimiter: "/" };
+                        blobService.listBlobsSegmentedWithPrefix(params.container, dirPath + "/", null, options, function(err, result, response)
+                        {
+                            if (!err)
+                            {
+                                log.info("Got result:", result);
+                                for (var i = 0; i < result.entries.length; i++)
+                                {
+                                    var entry = getEntryDetails(result.entries[i]);
+                                    if (onEntry(entry))
+                                    {
+                                        break;
+                                    }
+                                }
+                            }
+                            done(err);
+                        });
+                    }
+                ],
+                function(err)
+                {
+                    callback(err);
+                });
+            }
         },
         getDirectoryMetaData: function(dirPath, callback)
         {
