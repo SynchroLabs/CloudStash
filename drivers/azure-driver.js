@@ -14,18 +14,16 @@
 // you create /foo/bar/baz/test.txt, the virtual directories foo, bar, and baz will be shown, even though they
 // don't exist anywhere other than in the path to that object).
 //
-// In our application, we need the ability to create a directory that might be empty, and we will likely need to
-// attach metadata to that directory at some point.  The current design for this is to create an object representing
-// the directory.  We cannot create an object with a path then ends in "/" (as we do in S3 to denote a directory),
-// so the plan is to create a file "in" the directory we are creating and name it ":" (the colon is not an allowed
-// filename character in most file systems, so this should avoid conflict with any user file object).
+// In our application, we need the ability to create and persist a directory that might be empty, and we will 
+// likely need to attach metadata to directories that we create at some point.  The current design for this is
+// to create an object representing the directory.  We cannot create an object with a path then ends in "/" (as
+// we do in S3 to denote a directory), so the plan is to create a blob named the name of the desired directory
+// plus the ":" charater (the colon is not an allowed filename character in most file systems, so this should
+// avoid conflict with any user file object).
 //
 // One issue with this design is that these ":" directory objects will show up as objects in the various Azure
 // UX implementations.  This isn't really a problem, as we're only worried about the presentation of the Azure
 // storage contents through our own application, but it is something to note.
-//
-// In addition, when a directory is created, we need to create any intermediate directory markers that do not
-// already exist.
 //
 var log = require('./../lib/logger').getLogger("azure-driver");
 
@@ -114,7 +112,7 @@ module.exports = function(params, config)
         else if (fullpath.lastIndexOf(_directoryMetadataFilename) === fullpath.length-1)
         {
             item[".tag"] = "folder";
-            fullpath = fullpath.slice(0, -2);
+            fullpath = fullpath.slice(0, -1);
         }
 
         var displayPath = "/" + fullpath;
@@ -153,14 +151,27 @@ module.exports = function(params, config)
         }
     }
 
+    function getDirectoryMarkerFilename (dirName)
+    {
+        if (dirName.lastIndexOf("/") === dirName.length-1)
+        {
+            dirName = dirName.slice(0, -1);
+        }
+
+        return dirName + _directoryMetadataFilename;
+    }
+
     var driver = 
     {
         provider: "azure",
         createDirectory: function(dirPath, callback)
         {
+            // !!! Create any intermediate/ancestor directory markers that do not already exist.
+
+            log.info("Creating dir:", dirPath);
+
             var options = {};
-            // !!! Must create any parent directories that don't exist...
-            blobService.createAppendBlobFromText(params.container, dirPath + "/" + _directoryMetadataFilename, "", options, function (err, result, response)
+            blobService.createAppendBlobFromText(params.container, getDirectoryMarkerFilename(dirPath), "", options, function (err, result, response)
             {
                 logResult("createAppendBlobFromText (createDirectory)", err, result, response);
                 callback(err);
@@ -168,37 +179,60 @@ module.exports = function(params, config)
         },
         deleteDirectory: function(dirPath, callback)
         {
-            this.deleteObject(dirPath + "/" + _directoryMetadataFilename, callback);
+            this.deleteObject(getDirectoryMarkerFilename(dirPath), callback);
         },
         traverseDirectory: function(dirPath, recursive, onEntry, callback)
         {
-            // !!! Combination of listBlobsSegmentedWithPrefix (and delimiter of '/') and listBlobDirectoriesSegmentedWithPrefix
-            //
-            // !!! With our directory marker files, we don't need to do listBlobDirectoriesSegmentedWithPrefix, since the
-            //     "directories" will show us as file objects (though this will then *only* work with directories/objects
-            //     create from our app - and not on storage populated some other way - we could do both to be safe, maybe
-            //     driven by a config option - revisit).
-            //
-
-            // When we do a non-recursive listBlobs, we don't get any directory information.  If we want it, we'd have to
-            // do a listBlobDirectories in order to get the blobs directly under that directory.
-            //
-            // However, when we list blobs recursively (via delimiter), we can theoretically generate a list of directories,
-            // as they will all be referenced in some part of one or more blob paths.  The trick here would be to keep track
-            // of directories that have been reported in order to not report any given directory more than once.  It appears
-            // that blobs are returned in alpha order (with upper case sorting before lower case).  If that can be relied
-            // upon, that might give is an easier way to track "new" (so far unreported) directories we encounter.
-            //
-            // This is all assuming we're not relying solely on our directory markers.  If we find a marker, then that
-            // metadata should override the "existences of a virtual directory" kind of reporting referred to above (which
-            // is more about making sure everything works in a non-surprising way when our directory markers are not present).
+            // If we were relying solely on our directory markers this would be a lot simpler.  But we are aiming to make things
+            // work in an unsurprising way when we get pointed at any Azure container full of contents, so our directory support
+            // needs to work with either an Azure "virtual directory" (that exits because it's in the path of a blob) or our 
+            // explicit directory marker blobs (used to persist potentially empty directories, and to maintain directory metadata).
             //
 
             // !!! The implementation below ignores (or mistreats) our directory marker files, but does respect
             //     virtual directories (non-recursive only).  Some work left to do here.
             //
+            var pathsProcessed = {};
+
+            // Process a directory and any parent directories
+            //
+            function processDir (theDir)
+            {
+                if (!pathsProcessed[theDir])
+                {
+                    // Process parents first
+                    var parentDir = path.dirname(theDir);
+                    if (parentDir)
+                    {
+                        if (processDir(parentDir))
+                        {
+                            return true;
+                        }
+                    }
+
+                    pathsProcessed[theDir] = true;
+                    return onEntry(getEntryDetails({ name: theDir + "/" }));
+                }
+
+                return false;
+            }
+
             if (recursive)
             {
+                // !!! Implement - We report the directory indicator (virtual or marker) as they are encountered, and since
+                //     there is no guarantee that the directory marker will sort before contents of that directory, we can't
+                //     guarantee that the marker will get reported (a virtual directory may be reported before the marker), except
+                //     in the case of an empty directory, in which case the marker will be reported (since no there would be no
+                //     virtual directory).
+                //
+                // When we do a recursive listing, we don't get any explicit information about directories, but since we are
+                // visiting every blob under the given directory, we will encounter every (virtual) "directory" that exists
+                // under that directory in the paths of the blobs we encounter.
+                //
+                // We do not want to report a directory object more than once, so we need to keep track of which directories
+                // we have sent.  Also, we may have a directory marker blob, that should take precedence over any virtual 
+                // directory.
+                //
                 log.info("Listing blobs (recursively) at prefix:", dirPath);
 
                 var options = {};
@@ -210,18 +244,47 @@ module.exports = function(params, config)
                         for (var i = 0; i < result.entries.length; i++)
                         {
                             var entry = getEntryDetails(result.entries[i]);
-                            if (onEntry(entry))
+
+                            if ((entry[".tag"] === "folder") && pathsProcessed[entry["path_display"]])
                             {
-                                break;
+                                // Entry is a directory marker blob, but directory has already been reported
+                                log.info("Skipping processing if directory marker for already reported directory:", entry["path_display"]);
                             }
+                            else
+                            {
+                                // Process any ancestor directories of the blob encountered
+                                //
+                                if ((entry[".tag"] !== "folder") && processDir(path.dirname(entry["path_display"])))
+                                {
+                                    break;
+                                }
+
+                                if (onEntry(entry))
+                                {
+                                    break;
+                                }
+                            }
+
                         }
                     }
 
                     callback(err);
                 });
             }
-            else
+            else // non-recursive
             {
+                // !!! Implement - For now we report the virtual directories first, which means we'd only report a directory
+                //     marker object for an empty directory.
+                //
+                // When we do a non-recursive listing, we don't get any information (explicit or implicit) about directories
+                // contained in the given directory.  Because we want to support both our directory marker objects as well
+                // as Azure "virtual" directories, we have to list blob directories (to get any Azure virtual directories)
+                // in addition to listing the blobs (which will also contain any directory marker blobs).
+                //
+                // If we have a directory marker blob, that should take precedence over any virtual directory (and we can
+                // only report a directory once, so we must not report the virtual directory if a directory marker exists
+                // for the same sub-directory).  
+                //
                 log.info("Listing blobs at prefix:", dirPath);
 
                 async.series(
@@ -239,6 +302,7 @@ module.exports = function(params, config)
                                 for (var i = 0; i < result.entries.length; i++)
                                 {
                                     var entry = getEntryDetails(result.entries[i]);
+                                    pathsProcessed[entry["path_display"]] = true;
                                     if (onEntry(entry))
                                     {
                                         break;
@@ -261,9 +325,17 @@ module.exports = function(params, config)
                                 for (var i = 0; i < result.entries.length; i++)
                                 {
                                     var entry = getEntryDetails(result.entries[i]);
-                                    if (onEntry(entry))
+                                    if ((entry[".tag"] === "folder") && pathsProcessed[entry["path_display"]])
                                     {
-                                        break;
+                                        // Entry is a directory marker blob, but directory has already been reported
+                                        log.info("Skipping processing of directory marker for already reported directory:", entry["path_display"]);
+                                    }
+                                    else
+                                    {
+                                        if (onEntry(entry))
+                                        {
+                                            break;
+                                        }
                                     }
                                 }
                             }
@@ -279,7 +351,7 @@ module.exports = function(params, config)
         },
         getDirectoryMetaData: function(dirPath, callback)
         {
-            this.getObjectMetaData(dirPath + "/" + _directoryMetadataFilename, callback);
+            this.getObjectMetaData(getDirectoryMarkerFilename(dirPath), callback);
         },
         getObjectMetaData: function(filename, callback)
         {
