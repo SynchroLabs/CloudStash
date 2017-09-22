@@ -166,7 +166,10 @@ module.exports = function(params, config)
         provider: "azure",
         createDirectory: function(dirPath, callback)
         {
-            // !!! Create any intermediate/ancestor directory markers that do not already exist.
+            // We don't really need to create the intermediate directories (as they will exist as Azure virtual directories
+            // and we will report their existence properly in getDirectoryMetaData).  The only time we *need* the directory
+            // marker blobs is in the case of an explicitly created directory (that may be/remain empty) or if we need to set
+            // metadata on the directory (not currently supported).
 
             log.info("Creating dir:", dirPath);
 
@@ -187,11 +190,7 @@ module.exports = function(params, config)
             // work in an unsurprising way when we get pointed at any Azure container full of contents, so our directory support
             // needs to work with either an Azure "virtual directory" (that exits because it's in the path of a blob) or our 
             // explicit directory marker blobs (used to persist potentially empty directories, and to maintain directory metadata).
-            //
 
-            // !!! The implementation below ignores (or mistreats) our directory marker files, but does respect
-            //     virtual directories (non-recursive only).  Some work left to do here.
-            //
             var pathsProcessed = {};
 
             // Process a directory and any parent directories
@@ -221,17 +220,17 @@ module.exports = function(params, config)
             {
                 // !!! Implement - We report the directory indicator (virtual or marker) as they are encountered, and since
                 //     there is no guarantee that the directory marker will sort before contents of that directory, we can't
-                //     guarantee that the marker will get reported (a virtual directory may be reported before the marker), except
-                //     in the case of an empty directory, in which case the marker will be reported (since no there would be no
-                //     virtual directory).
+                //     guarantee that the marker will get reported (a virtual directory may be reported before the marker), 
+                //     except in the case of an empty directory, in which case the marker will be reported (since no there
+                //     would be no virtual directory).
                 //
                 // When we do a recursive listing, we don't get any explicit information about directories, but since we are
                 // visiting every blob under the given directory, we will encounter every (virtual) "directory" that exists
                 // under that directory in the paths of the blobs we encounter.
                 //
                 // We do not want to report a directory object more than once, so we need to keep track of which directories
-                // we have sent.  Also, we may have a directory marker blob, that should take precedence over any virtual 
-                // directory.
+                // we have sent.  Also, we may have a directory marker blob, and if so, that should take precedence over any
+                // virtual  directory.
                 //
                 log.info("Listing blobs (recursively) at prefix:", dirPath);
 
@@ -248,6 +247,7 @@ module.exports = function(params, config)
                             if ((entry[".tag"] === "folder") && pathsProcessed[entry["path_display"]])
                             {
                                 // Entry is a directory marker blob, but directory has already been reported
+                                //
                                 log.info("Skipping processing if directory marker for already reported directory:", entry["path_display"]);
                             }
                             else
@@ -351,7 +351,41 @@ module.exports = function(params, config)
         },
         getDirectoryMetaData: function(dirPath, callback)
         {
-            this.getObjectMetaData(getDirectoryMarkerFilename(dirPath), callback);
+            // Try to get metadata for a directory marker blob
+            //
+            this.getObjectMetaData(getDirectoryMarkerFilename(dirPath), function(err, entry)
+            {
+                if (!err && !entry)
+                {
+                    // The directory marker blob was not found, but this may still be a valid virtual directory.
+                    // Check it and see.  If it exists as a "virtual" directory (any object has this directory
+                    // in its path), then return an entry for the virtual directory.
+                    //
+                    var parent = path.parent(dirPath) + "/";
+                    var dirOptions = {};
+                    blobService.listBlobDirectoriesSegmentedWithPrefix(params.container, parent, null, dirOptions, function(err, result, response)
+                    {
+                        log.info("listBlobDirectories result:", result);
+                        if (!err)
+                        {
+                            for (var i = 0; i < result.entries.length; i++)
+                            {
+                                var entry = getEntryDetails(result.entries[i]);
+                                if (entry["path_display"] === dirPath)
+                                {
+                                    callback(null, entry);
+                                    return;
+                                }
+                            }
+                        }
+                        callback(err, null);
+                    });
+                }
+                else
+                {
+                    callback(err, entry);
+                }
+            });
         },
         getObjectMetaData: function(filename, callback)
         {
@@ -389,7 +423,7 @@ module.exports = function(params, config)
             // !!! This is kind of a train wreck.  You don't get the response back on success until after the stream
             //     is consumed.  So we can't propagate any request status or headers like we do with the other transports.
             //     If there is an error, you will get that immediately on the error (without getting or consuming a stream).
-            //     Presumably in the erro case the response will contain the http request details, and presumably you will
+            //     Presumably in the error case the response will contain the http request details, and presumably you will
             //     get a null stream back from the call.
             //
             // !!! The assumption is that if we get a stream back, then the request was a success (200 OK).  Our server logic
