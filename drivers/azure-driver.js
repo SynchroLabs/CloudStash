@@ -182,7 +182,23 @@ module.exports = function(params, config)
         },
         deleteDirectory: function(dirPath, callback)
         {
-            this.deleteObject(getDirectoryMarkerFilename(dirPath), callback);
+            this.deleteObject(getDirectoryMarkerFilename(dirPath), function(err)
+            {
+                if (err && (err.statusCode === 404))
+                {
+                    // If we try to delete a directory marker and it does not exist, we won't fail/err on the delete.  It may
+                    // be a virtual directory that "deleted itself" when its content disappeared.
+                    //
+                    // !!! If we really cared, we could call getDirectoryMetaData to confirm that the directory isn't a valid
+                    //     virtual directory.  If it is a valid directory without a directory marker blob, that means that by
+                    //     definition it is not empty (it is a virtual directory that can only exist by virtue of a blob contained
+                    //     in that directory), in which case we might actually want to fail this (this function should only be used
+                    //     to delete known-empty directories).
+                    //
+                    err = null;
+                }
+                callback(err);
+            });
         },
         traverseDirectory: function(dirPath, recursive, onEntry, callback)
         {
@@ -201,7 +217,7 @@ module.exports = function(params, config)
                 {
                     // Process parents first
                     var parentDir = path.dirname(theDir);
-                    if (parentDir)
+                    if (parentDir && (parentDir !== ".") && (parentDir !== "/"))
                     {
                         if (processDir(parentDir))
                         {
@@ -361,11 +377,11 @@ module.exports = function(params, config)
                     // Check it and see.  If it exists as a "virtual" directory (any object has this directory
                     // in its path), then return an entry for the virtual directory.
                     //
-                    var parent = path.parent(dirPath) + "/";
+                    var parent = path.dirname(dirPath) + "/";
                     var dirOptions = {};
                     blobService.listBlobDirectoriesSegmentedWithPrefix(params.container, parent, null, dirOptions, function(err, result, response)
                     {
-                        log.info("listBlobDirectories result:", result);
+                        log.info("getDirectoryMetaData listBlobDirectories result:", result);
                         if (!err)
                         {
                             for (var i = 0; i < result.entries.length; i++)

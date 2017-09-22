@@ -22,17 +22,14 @@ var _testTimeout = 2000;
 if (driver === "manta")
 {
   _testConfig = require('./../lib/config').getConfig('config_manta.json');
-  _testTimeout = 20000;
 }
 else if (driver === "aws")
 {
   _testConfig = require('./../lib/config').getConfig('config_s3.json');
-  _testTimeout = 20000;
 }
 else if (driver === "azure")
 {
   _testConfig = require('./../lib/config').getConfig('config_azure.json');
-  _testTimeout = 20000;
 }
 else
 {
@@ -83,10 +80,12 @@ function areBuffersEqual(a, b)
 
 describe('CloudStash', function() {
 
-  if (driver === "manta")
+  if (driver) // Non-default (non-local-file)
   {
-    this.timeout(_testTimeout);
+    _testTimeout = 20000;
   }
+
+  this.timeout(_testTimeout);
 
   describe('/users/get_current_account', function() {
     it('returns account id', function(done) {
