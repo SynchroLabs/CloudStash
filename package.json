@@ -39,6 +39,7 @@
     "nconf": "^0.7.1",
     "passport": "^0.4.0",
     "passport-local": "^1.0.0",
+    "passport-saml": "^0.15.0",
     "restify": "^4.3.0",
     "restify-cors-middleware": "^1.0.1",
     "restify-jwt": "^0.4.0",
