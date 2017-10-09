@@ -47,7 +47,8 @@
   },
   "scripts": {
     "start": "node app.js | ./node_modules/.bin/bunyan",
-    "test": "nyc --reporter=html --reporter=text mocha"
+    "test": "nyc --reporter=html --reporter=text mocha",
+    "coverage": "nyc report --reporter=text-lcov | coveralls"
   },
   "engines": {
     "node": ">= 0.12"
