@@ -1,8 +1,5 @@
 # CloudStash
 
-[![Build Status](https://travis-ci.org/SynchroLabs/CloudStash.svg?branch=master)](https://travis-ci.org/SynchroLabs/CloudStash)
-[![Coverage Status](https://coveralls.io/repos/github/SynchroLabs/CloudStash/badge.svg?branch=master)](https://coveralls.io/github/SynchroLabs/CloudStash?branch=master)
-
 End-user cloud file storage API backed by cloud storage from any provider
 
 Presents the Dropbox v2 HTTP API

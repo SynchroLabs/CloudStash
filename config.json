@@ -3,9 +3,5 @@
     { 
         "provider": "file", 
         "basePath": "test/_test_store" 
-    },
-    "AUTH_STRATEGY": "saml",
-    "SAML_CALLBACK": "http://localhost:1338/oauth2/authorize",
-    "SAML_ENTRYPOINT": "https://synchrolabs.onelogin.com/trust/saml2/http-post/sso/709631",
-    "SAML_ISSUER": "https://app.onelogin.com/saml/metadata/709631"
+    }
 }
