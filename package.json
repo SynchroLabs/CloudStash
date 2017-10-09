@@ -46,7 +46,7 @@
     "uuid": "^3.1.0"
   },
   "scripts": {
-    "start": "node app.js",
+    "start": "node app.js | ./node_modules/.bin/bunyan",
     "test": "nyc --reporter=html --reporter=text mocha"
   },
   "engines": {
